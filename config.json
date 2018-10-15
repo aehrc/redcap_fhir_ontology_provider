@@ -1,0 +1,23 @@
+{
+   "name": "Fhir Ontology Autocomplete Module",
+   "namespace": "AEHRC\\FhirOntologyAutocompleteExternalModule", 
+   "description": "This module provides support for referencing an external Fhir based ontology server to lookup values.",
+   "authors": [
+       {
+            "name": "David Conlan",
+            "email": "david.conlan@csiro.au",
+            "institution": "The Australian E-Heath Research Centre"
+        }
+    ],
+    "permissions": [
+        "redcap_every_page_before_render"
+    ],
+    "system-settings" : [
+				{
+					"key" : "fhir_api_url",
+					"name" : "Fhir API URL",
+					"type" : "text",
+          "default" : "https://ontoserver.csiro.au/stu3-latest"
+				}
+	 ]
+}
