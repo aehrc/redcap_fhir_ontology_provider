@@ -402,9 +402,6 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
     });
   } );</script>
 <div style='margin:0 0 2px;'>
-  <input id="fhir_value_set" class="x-form-text x-form-field" size="25" type="text" readonly="readonly">
-   <a class="ui-button ui-widget ui-corner-all" href="#" onclick="show_selected_valueset()">Show Details</a>
-  
   <div style='margin:3px 0 8px;color:#888;'>Search For valuset using:</div>
   <select id='fhir_valueset_search_type' name='fhir_valueset_search_type' 
           onchange='fhir_update_search_selection(this.options[this.selectedIndex].value)'
@@ -417,9 +414,14 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
     <option value="loinc_answer">LOINC implicit answer set</option>
   </select><br>
   <div class="ui-front">
-   <input  id="fhir_valueset_search" class="x-form-text x-form-field" size="25"> <span id="fhir_valueset_search_code"></span>
-   </div>
+   <input  id="fhir_valueset_search" class="x-form-text x-form-field" size="25">
+   <span id="fhir_valueset_search_code" style="display:none"></span>
    <a class="ui-button ui-widget ui-corner-all" href="#" onclick="move_selected_valueset()">Select</a>
+   </div>
+
+  <input id="fhir_value_set" class="x-form-text x-form-field" size="25" type="text" readonly="readonly">
+   <a class="ui-button ui-widget ui-corner-all" href="#" onclick="show_selected_valueset()">Show Details</a>
+  
    <div id="fhir_valueset_dialog" title="ValueSet Details">
      <div>
 	    <label for="fhirValueSet_url">URL:</label>
