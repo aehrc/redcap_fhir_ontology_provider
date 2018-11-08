@@ -42,6 +42,18 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
     // don't need to do anything, just trigger the constructor so the provider is available.
   }
 
+  
+  public function validateSettings($settings){
+      $errors='';
+      $fhirUrl = $settings['fhir_api_url'];
+      $metadata = http_get($fhirUrl . '/metadata');
+      if ($metadata == FALSE){
+        $errors .= "Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
+      }
+      return $errors;
+  }
+  
+  
   /**
     * return the name of the ontology service as it will be display on the service selection
     * drop down.
