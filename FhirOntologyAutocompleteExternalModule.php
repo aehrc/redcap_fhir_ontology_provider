@@ -100,7 +100,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
                      
       // Determine the value  
                         // need to add the system as codes are not unique in SCT 
-      $this_value = $this_item['code'] . " |" . $this_item['display'] ."|" . $this_item['system'] ; 
+      $this_value = $this_item['code'] . "|" . $this_item['display'] ."|" . $this_item['system'] ; 
        
       // Add to array 
       $results[$this_value] = $this_item['display']; 
