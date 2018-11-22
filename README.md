@@ -11,7 +11,7 @@ This is done using the ValueSet/$expand operation
 
 
 ## Using the module
-The module code needs to be places in a directory modules/fhir-ontoloy_v0.1
+The module code needs to be places in a directory modules/redcap-fhir-ontology-provider_v0.1
 
 The module should then show up as an external module.
 
