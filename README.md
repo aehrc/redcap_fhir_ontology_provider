@@ -23,11 +23,11 @@ The default url is `https://ontoserver.csiro.au/stu3-latest` which being an Aust
 Once enabled the online designer will have a new ontology source availble. If selected the following UI elements will be made available:
 
 -Search For valuset using: (dropdown with the options)
-    - ValueSet Name - searching using the name of the valueset
-    - By CodeSystem - searching using the name of the codesystem
-    - SnomedCT Refset - search for a SnomedCT Refset
-    - SnomedCT isa implicit valueset - search for a SnomedCT concept and use the valueset composed of it and its children
-    - LOINC implicit answer set - search for a LOINC implicit answer set
+ - ValueSet Name - searching using the name of the valueset
+ - By CodeSystem - searching using the name of the codesystem
+ - SnomedCT Refset - search for a SnomedCT Refset
+ - SnomedCT isa implicit valueset - search for a SnomedCT concept and use the valueset composed of it and its children
+ - LOINC implicit answer set - search for a LOINC implicit answer set
     
 -text input with autocomplete based on the search mode
 
