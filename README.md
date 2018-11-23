@@ -3,6 +3,7 @@
 As part of release 8.8.1 of REDCap an extension point was added to allow external modules to become an 
 *'Ontology Provider'*. These act like the existing BioPortal ontology mechanism, but allow alternative sources.
 The main function of an ontology provider is to take a search term and return some match of code + display.
+You can see more information on implementing an Ontology Provider at the [Simple Ontology Provider](https://github.com/aehrc/redcap_simple_ontology_provider) external module home.
 
 This module allows a FHIR based terminology server to be an alternative ontology provider.
 
