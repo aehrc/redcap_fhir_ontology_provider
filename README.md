@@ -11,30 +11,82 @@ This is done using the ValueSet/$expand operation
 
 
 ## Using the module
-The module code needs to be places in a directory modules/redcap-fhir-ontology-provider_v0.1
+The module code needs to be places in a directory `modules/fhir-ontology-provider_v<version>`
 
 The module should then show up as an external module.
 
-Besides exposing the module to projects, the only setting for the module is the url for the fhir server. The default value should work out of the box, but people may want to run their own server to have better control of the available ValueSets.
+Besides exposing the module to projects, the only setting for the module is the url for the fhir server. The default value should work out of the box, but people may want to run their own server to have better control of the available ValueSets. 
+The default url is `https://ontoserver.csiro.au/stu3-latest` which being an Australian server has the Australian edition of SNOMEDCT as its default.
 
 ### Online designer
 
-Once enabled the online designer will have a new ontology source availble. If selected the follow UI elements will be made available:
+Once enabled the online designer will have a new ontology source availble. If selected the following UI elements will be made available:
 
-Search For valuset using: (dropdown with the options)
-    - ValueSet Name - searching using the name of the valueset
-    - By CodeSystem - searching using the name of the codesystem
-    - SnomedCT Refset - search for a SnomedCT Refset
-    - SnomedCT isa implicit valueset - search for a SnomedCT concept and use the valueset composed of it and its children
-    - LOINC implicit answer set - search for a LOINC implicit answer set
+-Search For valuset using: (dropdown with the options)
+    ..* ValueSet Name - searching using the name of the valueset
+    ..* By CodeSystem - searching using the name of the codesystem
+    ..* SnomedCT Refset - search for a SnomedCT Refset
+    ..* SnomedCT isa implicit valueset - search for a SnomedCT concept and use the valueset composed of it and its children
+    ..* LOINC implicit answer set - search for a LOINC implicit answer set
     
-text input with autocomplete based on the search mode
+-text input with autocomplete based on the search mode
 
-select button - Select the valueset found using the search, making it the selected valuset
+-select button - Select the valueset found using the search, making it the selected valuset
 
-text input which is filled out by the search button, contains the uri for the selected valueset
+-text input which is filled out by the search button, contains the uri for the selected valueset
 
-Show details button - Retrieve the first 10 entries of the selected valueset, and display along with other information about the valueset in a dialog.
+-Show details button - Retrieve the first 10 entries of the selected valueset, and display along with other information about the valueset in a dialog.
+
+![Online Designer](documentation/online_designer.png)
+
+![Show Details](documentation/ShowDetails.png)
+
+### Label Cache Issue
+
+When an ontology is chosen for use in a text field, this is stored using the syntax `<SERVICE>:<CATEGORY>` inside the `element_enum` column of the fields metadata. 
+For this module we use `FHIR:<ValueSetUrl>`. The search function then calls `<fhirServerUrl>/ValueSet/$expand?url=<ValueSetUrl>&filter=<searchTerm>&count=<resultLimit>`
+
+When a user fills in the field, REDCap will store only the code for the selected item with the form. It will also add a record to the `redcap_web_service_cache` table 
+which links the label for the selected item back to its code. This causes an outstanding issue with the module. The `redcap_web_service_cache` table is defined to
+have up to 50 characters for the category, but the ValueSet url this module uses as the category may be much larger. For example the Medicinal product reference set 
+from the Australian version of SnomedCT would have a url of `http://snomed.info/sct/32506021000036107?fhir_vs=refset/929360061000036106` which is 74 characters long.
+
+This results in the category field being truncated when stored in the cache table, and then retrival from the cache will fail. 
+
+The fix for this problem is to extend the size of the cache table.
+```
+alter table redcap_web_service_cache change category varchar(255); 
+```
+
+If the module is already in use and you need to fix the issue then first determine what value sets are in use in your system:
+```
+select substr(element_enum, 6) as full, substr(element_enum, 6, 50) as truncated from redcap_metadata where element_enum like 'FHIR%' and length(element_enum) > 55;
+```
+
+Any returned rows indicates possible issues
+
+eg
+```
++----------------------------------------------------------+----------------------------------------------------+
+| full                                                     | truncated                                          |
++----------------------------------------------------------+----------------------------------------------------+
+| http://snomed.info/sct?fhir_vs=refset/929360061000036106 | http://snomed.info/sct?fhir_vs=refset/929360061000 |
++----------------------------------------------------------+----------------------------------------------------+
+```
+
+To update any cached values use the sql:
+
+```
+update redcap_web_service_cache set category=<full> where category=<truncated>;
+
+```
+
+Where `<full>` and `<truncated>` are the values returned from the earlier query.
+
+```
+update redcap_web_service_cache set category='http://snomed.info/sct?fhir_vs=refset/929360061000036106' where category='http://snomed.info/sct?fhir_vs=refset/929360061000'
+```
+
 
 
 ## Fhir based Terminolgy Service
@@ -55,6 +107,11 @@ A SNOMED CT implicit value set URL has two parts:
 
 "http://snomed.info/sct" should be understood to mean an unspecified edition/version. This defines an incomplete value set whose actual membership will depend on the particular edition used when it is expanded. If no version or edition is specified, the terminology service SHALL use the latest version available for its default edition (or the international edition, if no other edition is the default). 
 
+The default terminology service for this module, `https://ontoserver.csiro.au/stu3-latest` is an Australian server and has the Australian edition of SNOMEDCT as its default.
+
+To define an edition and version the url is `http://snomed.info/sct/<edition>/version/<version>`. To get the latest version of an edition then `http://snomed.info/sct/<edition>` is used.
+
+A list of known editions can be found at https://confluence.ihtsdotools.org/display/DOC/List+of+SNOMED+CT+Edition+URIs
 
 For the second part of the URL (the query part), the 4 possible values are: 
 - *?fhir_vs* - all Concept IDs in the edition/version. If the base URI is http://snomed.info/sct, this means all possible SNOMED CT concepts 
