@@ -258,6 +258,10 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
                 result.push({ 'label' : v.resource.name, 'value' : v.resource.url});
               }
             }
+            if (!result.length){
+              result.push({ 'label' : 'No matches found', 'value' : '__NMF__' });
+            }
+            
             response( result );
           };
         }
@@ -273,6 +277,9 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
                   result.push({ 'label' : v.resource.name, 'value' : v.resource.valueSet});
                 }
               }
+            }
+            if (!result.length){
+              result.push({ 'label' : 'No matches found', 'value' : '__NMF__' });
             }
             response( result );
           };
@@ -304,6 +311,9 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
                 result.push({ 'label' : v.display, 'value' : 'http://snomed.info/sct?fhir_vs=refset/' + v.code});
               }
             }
+            if (!result.length){
+              result.push({ 'label' : 'No matches found', 'value' : '__NMF__' });
+            }
             response( result );
           };
         }
@@ -333,6 +343,9 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
               for (v of data.expansion.contains){
                 result.push({ 'label' : v.display, 'value' : 'http://snomed.info/sct?fhir_vs=isa/' + v.code});
               }
+            }
+            if (!result.length){
+              result.push({ 'label' : 'No matches found', 'value' : '__NMF__' });
             }
             response( result );
           };
@@ -380,6 +393,9 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
                 result.push({ 'label' : v.display, 'value' : 'http://loinc.org/vs/' + v.code});
               }
             }
+            if (!result.length){
+              result.push({ 'label' : 'No matches found', 'value' : '__NMF__' });
+            }
             response( result );
           };
         }
@@ -398,12 +414,22 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
       },
       select: function( event, ui ) {
         event.preventDefault();
-        $('#fhir_valueset_search_code').text(ui.item.value);
-        $(this).val(ui.item.label);
+        if (ui.item.value !== '__NMF__'){
+          $('#fhir_valueset_search_code').text(ui.item.value);
+          $(this).val(ui.item.label);
+          return true;
+        }
+        else {
+          return false;
+        }
       },
       focus: function(event, ui) {
           event.preventDefault();
-          $(this).val(ui.item.label);
+          if (ui.item.value !== '__NMF__'){
+            $(this).val(ui.item.label);
+          }
+
+          return false;
       },
       minLength: 2
     } );
@@ -420,7 +446,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
           class='x-form-text x-form-field' style='padding-right:0;height:22px;width:330px;max-width:330px;'>
     <option value=""> -- choose search criteria -- </option>
     <option value="name">ValueSet Name</option>
-    <option value="codesystem">By CodeSystem</option>
+    <option value="codesystem">By CodeSystem(Name)</option>
     <option value="refset">SnomedCT Refset</option>
     <option value="isa">SnomedCT isa implicit valueset</option>
     <option value="loinc_answer">LOINC implicit answer set</option>
