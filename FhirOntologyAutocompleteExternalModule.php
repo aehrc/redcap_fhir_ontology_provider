@@ -45,6 +45,31 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
   
   public function validateSettings($settings){
       $errors='';
+      
+      $rnr = $settings['return_no_result'];
+      $label = trim($settings['no_result_label']);
+      $code = trim($settings['no_result_code']);
+      
+      if ($rnr){
+          // check we have a code and label
+          if ($label === ''){
+              $errors .= "No Result Label is required\n";
+          }
+          else if ($label != strip_tags($label)){
+              $errors .= "No Results Label has illegal characters - ".$label."\n";
+          }
+          
+          if ($code === ''){
+              $errors .= "No Result Code is required\n";
+          }
+          else if ($code != strip_tags($code)
+              || strpos($code, "'") !== false
+              || strpos($code, '"') !== false
+              ){
+                  $errors .= "No Results Code has illegal characters - ".$code."\n";
+          }
+      }
+      
       $fhirUrl = $settings['fhir_api_url'];
       $metadata = http_get($fhirUrl . '/metadata');
       if ($metadata == FALSE){
@@ -92,19 +117,31 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
     $json = http_get($url); 
     // Parse the JSON into an array 
     $list = json_decode($json, true); 
-                $expansion = $list['expansion']; 
-    if (!is_array($list) || !isset($expansion['contains'])) return array(); 
-    // Loop through results 
-    $results = array(); 
-    foreach ($expansion['contains'] as $this_item) { 
-                     
-      // Determine the value  
-                        // need to add the system as codes are not unique in SCT 
-      $this_value = $this_item['code'] . "|" . $this_item['display'] ."|" . $this_item['system'] ; 
-       
-      // Add to array 
-      $results[$this_value] = $this_item['display']; 
-    } 
+    $expansion = $list['expansion']; 
+    $results = array();
+    if (is_array($list) && isset($expansion['contains'])){
+        // Loop through results
+        
+        foreach ($expansion['contains'] as $this_item) {
+            
+            // Determine the value
+            // need to add the system as codes are not unique in SCT
+            $this_value = $this_item['code'] . "|" . $this_item['display'] ."|" . $this_item['system'] ;
+            
+            // Add to array
+            $results[$this_value] = $this_item['display'];
+        }
+    }
+
+    if (!$results){
+        // no results found
+        $return_no_result = $this->getSystemSetting('return_no_result');
+        if ($return_no_result){
+            $no_result_label = $this->getSystemSetting('no_result_label');
+            $no_result_code = $this->getSystemSetting('no_result_code');
+            $results[$no_result_code] = $no_result_label; 
+        }
+    }
     // Return array of results 
     return array_slice($results, 0, $result_limit, true); 
   } 

@@ -16,8 +16,11 @@ The module code needs to be placed in a directory `modules/fhir-ontology-provide
 
 The module should then show up as an external module.
 
-Besides exposing the module to projects, the only setting for the module is the url for the fhir server. The default value should work out of the box, but people may want to run their own server to have better control of the available ValueSets. 
-The default url is `https://ontoserver.csiro.au/stu3-latest` which being an Australian server has the Australian edition of SNOMED CT as its default.
+The following site wide setings are available:
+  * `FHIR API URL` -this is the url for the fhir server. The default value should work out of the box, but people may want to run their own server to have better control of the available ValueSets. The default url is `https://ontoserver.csiro.au/stu3-latest` which being an Australian server has the Australian edition of SNOMED CT as its default.
+  * `Return 'No Results Found'` - This check box is used to indicate that a special value should be returned if no values are returned by a search. The purpose of this is to allow the option to be selected and then have an additional field get activated via branching logic to receive additional data.
+ * `No Results Label` - The display value for the special value returned if the `return no results found` option is enabled. The Label cannot contain html markup.
+ * `No Results Code` - The value for the special value returned if the `return no results found` option is enabled. The code cannot contain html markup, a single or double quote.
 
 ### Online designer
 
@@ -56,7 +59,7 @@ This results in the category field being truncated when stored in the cache tabl
 
 The fix for this problem is to extend the size of the cache table.
 ```
-alter table redcap_web_service_cache change category varchar(255); 
+alter table redcap_web_service_cache change category varchar(100); 
 ```
 
 If the module is already in use and you need to fix the issue then first determine what value sets are in use in your system:
@@ -90,7 +93,7 @@ update redcap_web_service_cache set category='http://snomed.info/sct?fhir_vs=ref
 
 
 
-## Fhir based Terminolgy Service
+## FHIR based Terminolgy Service
 
 The FHIR terminology specification is based on two key concepts, originally defined in HL7 v3 Core Principles : 
 

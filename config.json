@@ -15,9 +15,35 @@
     "system-settings" : [
 				{
 					"key" : "fhir_api_url",
-					"name" : "Fhir API URL",
+					"name" : "FHIR API URL",
 					"type" : "text",
-          "default" : "https://ontoserver.csiro.au/stu3-latest"
+          			"default" : "https://ontoserver.csiro.au/stu3-latest",
+          			"required" : true
+				},
+				{
+					"key" : "return_no_result",
+					"name" : "Return 'No Results Found'",
+					"type" : "checkbox"
+				},
+				{
+					"key" : "no_result_label",
+					"name" : "No Results Label",
+					"type" : "text",
+					"default" : "No Results Found",
+					"branchingLogic" : {
+    					"field": "return_no_result",
+    					"value": "true"
+					}
+				},
+								{
+					"key" : "no_result_code",
+					"name" : "No Results Code",
+					"type" : "text",
+					"default" : "_NRF_",
+					"branchingLogic" : {
+    					"field": "return_no_result",
+    					"value": "true"
+					}
 				}
 	],
   "compatibility": {
