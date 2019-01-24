@@ -10,7 +10,9 @@
         }
     ],
     "permissions": [
-        "redcap_every_page_before_render"
+        "redcap_every_page_before_render",
+        "redcap_data_entry_form",
+        "redcap_survey_page"
     ],
     "system-settings" : [
 				{
@@ -20,6 +22,12 @@
           			"default" : "https://ontoserver.csiro.au/stu3-latest",
           			"required" : true
 				},
+				{
+					"key" : "add_value_tooltip",
+					"name" : "Add value tooltip",
+					"type" : "checkbox"
+				},
+				
 				{
 					"key" : "return_no_result",
 					"name" : "Return 'No Results Found'",

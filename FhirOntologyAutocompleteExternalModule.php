@@ -41,7 +41,72 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
   public function redcap_every_page_before_render (int $project_id ){
     // don't need to do anything, just trigger the constructor so the provider is available.
   }
+  
+  public function redcap_data_entry_form ( int $project_id, string $record, 
+      string $instrument, int $event_id, int $group_id, int $repeat_instance){
+  
+          if ($this->getSystemSetting('add_value_tooltip')){
+              // this is a bit of a hack, if redcap change their code it will break
+              // it looks for all input fields tagged as autosug-ont-field
+              // which should mean they are an ontology lookup and adds
+              // a hover function which will set the fields title to match
+              // its value. This should give a popup with the full value
+              // text shown instead of being restricted by the size of
+              // the input field.
+              
+              $dataEntryHtml = <<<EOD
+<script type="text/javascript">
+      // IIFE - Immediately Invoked Function Expression
+      (function($, window, document) {
+          // The $ is now locally scoped
+          $('input.autosug-ont-field').each(function(){
+              $( this ).hover(function(){
+                  $( this ).attr('title', $( this ).val());
+                  return true;
+              });
+          });
+          
+      }(window.jQuery, window, document));
+      // The global jQuery object is passed as a parameter
+</script>
+EOD;
+              print($dataEntryHtml);
+          }
+  }
+      
+  
+  public function redcap_survey_page ( int $project_id, string $record, 
+      string $instrument, int $event_id, int $group_id, string $survey_hash, int $response_id, 
+      int $repeat_instance){
 
+          if ($this->getSystemSetting('add_value_tooltip')){
+              // this is a bit of a hack, if redcap change their code it will break
+              // it looks for all input fields tagged as autosug-ont-field
+              // which should mean they are an ontology lookup and adds
+              // a hover function which will set the fields title to match
+              // its value. This should give a popup with the full value
+              // text shown instead of being restricted by the size of
+              // the input field.
+            $surveyHtml = <<<EOD
+<script type="text/javascript">
+      // IIFE - Immediately Invoked Function Expression
+      (function($, window, document) {
+          // The $ is now locally scoped
+          $('input.autosug-ont-field').each(function(){
+              $( this ).hover(function(){
+                  $( this ).attr('title', $( this ).val());
+                  return true;
+              });
+          });
+          
+      }(window.jQuery, window, document));
+      // The global jQuery object is passed as a parameter
+</script>
+EOD;
+            print($surveyHtml);
+          }
+  }
+  
   
   public function validateSettings($settings){
       $errors='';

@@ -18,6 +18,7 @@ The module should then show up as an external module.
 
 The following site wide setings are available:
   * `FHIR API URL` -this is the url for the fhir server. The default value should work out of the box, but people may want to run their own server to have better control of the available ValueSets. The default url is `https://ontoserver.csiro.au/stu3-latest` which being an Australian server has the Australian edition of SNOMED CT as its default.
+  * `Add value tooltip` - The codes returned by lookup are returned in the format `code|display|system` this means the value displayed when an entry is selected is normally longer then the 12 or so characters normally used to display the code. This option will add a `title` attribute to the value display to show the value as a tooltip when the mouse is used to hover over the value. This will only show up in the data entry and survey forms, not testing in the online designed.
   * `Return 'No Results Found'` - This check box is used to indicate that a special value should be returned if no values are returned by a search. The purpose of this is to allow the option to be selected and then have an additional field get activated via branching logic to receive additional data.
  * `No Results Label` - The display value for the special value returned if the `return no results found` option is enabled. The Label cannot contain html markup.
  * `No Results Code` - The value for the special value returned if the `return no results found` option is enabled. The code cannot contain html markup, a single or double quote.
