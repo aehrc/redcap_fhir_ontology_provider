@@ -12,7 +12,7 @@ This is done using the ValueSet/$expand operation
 
 
 ## Using the module
-The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.1`
+The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.2`
 
 The module should then show up as an external module.
 
