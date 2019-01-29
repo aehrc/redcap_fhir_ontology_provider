@@ -42,8 +42,9 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
     // don't need to do anything, just trigger the constructor so the provider is available.
   }
   
-  public function redcap_data_entry_form ( int $project_id, string $record, 
-      string $instrument, int $event_id, int $group_id, int $repeat_instance){
+
+  public function redcap_data_entry_form ( $project_id, $record, 
+      $instrument, $event_id, $group_id, $repeat_instance){
   
           if ($this->getSystemSetting('add_value_tooltip')){
               // this is a bit of a hack, if redcap change their code it will break
@@ -75,9 +76,9 @@ EOD;
   }
       
   
-  public function redcap_survey_page ( int $project_id, string $record, 
-      string $instrument, int $event_id, int $group_id, string $survey_hash, int $response_id, 
-      int $repeat_instance){
+  public function redcap_survey_page ( $project_id, $record, 
+      $instrument, $event_id, $group_id, $survey_hash, $response_id, 
+      $repeat_instance){
 
           if ($this->getSystemSetting('add_value_tooltip')){
               // this is a bit of a hack, if redcap change their code it will break
@@ -106,7 +107,7 @@ EOD;
             print($surveyHtml);
           }
   }
-  
+
   
   public function validateSettings($settings){
       $errors='';
