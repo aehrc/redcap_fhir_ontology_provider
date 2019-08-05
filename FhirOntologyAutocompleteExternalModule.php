@@ -270,6 +270,12 @@ EOD;
         }
   }
 
+  function JSON_STRING(data){
+    this.data = data;
+  }
+
+  JSON_STRING.prototype.toString = function(){return JSON.stringify(this.data)};
+
   function show_selected_valueset(){
         selected_valueset = $('#fhir_valueset_search_code').text();
         if (selected_valueset == ''){
@@ -286,7 +292,8 @@ EOD;
           $.ajax( {
             type: "POST",
             url: "{$fhir_server_uri}/ValueSet/\$expand",
-            data: JSON.stringify({
+            processData: false,
+            data: new JSON_STRING({
               "resourceType": "Parameters",
               "parameter": [
                 {
@@ -351,6 +358,7 @@ EOD;
 
         if (search_type === 'name'){
           type="GET";
+	  processData = true;
           url="{$fhir_server_uri}/ValueSet";
           postData={ 'name': request.term, '_summary': 'true', '_count': '20'};
           processFunction = function( data ){
@@ -370,6 +378,7 @@ EOD;
         }
         else if (search_type === 'codesystem') {
           type="GET";
+	  processData = true;
           url="{$fhir_server_uri}/CodeSystem";
           postData={ 'name': request.term, '_elements': 'name,valueSet', '_count': '20'};
           processFunction = function( data ){
@@ -389,8 +398,9 @@ EOD;
         }
         else if (search_type === 'refset') {
           type="POST";
+	  processData = false;
           url="{$fhir_server_uri}/ValueSet/\$expand";
-          postData = JSON.stringify({
+          postData = new JSON_STRING({
             "resourceType": "Parameters",
             "parameter": [
               {
@@ -422,8 +432,9 @@ EOD;
         }
         else if (search_type === 'isa') {
           type="POST";
+	  processData = false;
           url="{$fhir_server_uri}/ValueSet/\$expand";
-          postData = JSON.stringify({
+          postData = new JSON_STRING({
             "resourceType": "Parameters",
             "parameter": [
               {
@@ -455,8 +466,9 @@ EOD;
         }
         else if (search_type === 'loinc_answer') {
           type="POST";
+	  processData = false;
           url="{$fhir_server_uri}/ValueSet/\$expand";
-          postData = JSON.stringify({
+          postData = new JSON_STRING({
             "resourceType": "Parameters",
             "parameter": [
               {
@@ -509,6 +521,7 @@ EOD;
         $.ajax( {
           type: type,
           url: url,
+          processData: processData,
           data: postData,
           contentType: "application/json; charset=utf-8",
           dataType: "json",
