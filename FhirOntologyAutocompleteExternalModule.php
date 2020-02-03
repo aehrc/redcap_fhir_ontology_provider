@@ -38,7 +38,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule  imp
       $manager->addProvider($this);
   }
 
-  public function redcap_every_page_before_render (int $project_id ){
+  public function redcap_every_page_before_render ( $project_id ){
     // don't need to do anything, just trigger the constructor so the provider is available.
   }
   
