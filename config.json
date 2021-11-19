@@ -1,61 +1,115 @@
 {
-   "name": "Fhir Ontology Autocomplete Module",
-   "namespace": "AEHRC\\FhirOntologyAutocompleteExternalModule", 
-   "description": "This module provides support for referencing an external Fhir based ontology server to lookup values.",
-   "authors": [
-       {
-            "name": "David Conlan",
-            "email": "david.conlan@csiro.au",
-            "institution": "The Australian E-Heath Research Centre"
+  "name": "Fhir Ontology Autocomplete Module",
+  "namespace": "AEHRC\\FhirOntologyAutocompleteExternalModule",
+  "description": "This module provides support for referencing an external Fhir based ontology server to lookup values.",
+  "authors": [
+    {
+      "name": "David Conlan",
+      "email": "david.conlan@csiro.au",
+      "institution": "The Australian E-Heath Research Centre"
+    }
+  ],
+  "permissions": [
+    "redcap_every_page_before_render",
+    "redcap_data_entry_form",
+    "redcap_survey_page"
+  ],
+  "system-settings": [
+    {
+      "key": "fhir_api_url",
+      "name": "FHIR API URL",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "fhir_api_url_info",
+      "name": "The FHIR server url to use. eg. https://r4.ontoserver.csiro.au/fhir or https://snowstorm-fhir.snomedtools.org/fhir. Don't leave a trailing slash.",
+      "type": "descriptive"
+    },
+    {
+      "key": "add_value_tooltip",
+      "name": "Add value tooltip",
+      "type": "checkbox"
+    },
+    {
+      "key": "return_no_result",
+      "name": "Return 'No Results Found'",
+      "type": "checkbox"
+    },
+    {
+      "key": "no_result_label",
+      "name": "No Results Label",
+      "type": "text",
+      "default": "No Results Found",
+      "branchingLogic": {
+        "field": "return_no_result",
+        "value": "true"
+      }
+    },
+    {
+      "key": "no_result_code",
+      "name": "No Results Code",
+      "type": "text",
+      "default": "_NRF_",
+      "branchingLogic": {
+        "field": "return_no_result",
+        "value": "true"
+      }
+    },
+    {
+      "key": "fhir_api_auth_info",
+      "name": "The fhir server may require some form of authentication, currently only OAuth2 Client Credentials is supported. Communication with the FHIR server is made by the redcap server, not the users browser.",
+      "type": "descriptive"
+    },
+    {
+      "key": "authentication_type",
+      "name": "Authentication Type",
+      "required": true,
+      "type": "dropdown",
+      "choices": [
+        {
+          "value": "none",
+          "name": "No Authentication Required"
+        },
+        {
+          "value": "cc",
+          "name": "OAuth2 Client Credentials"
         }
-    ],
-    "permissions": [
-        "redcap_every_page_before_render",
-        "redcap_data_entry_form",
-        "redcap_survey_page"
-    ],
-    "system-settings" : [
-				{
-					"key" : "fhir_api_url",
-					"name" : "FHIR API URL",
-					"type" : "text",
-          			"default" : "https://ontoserver.csiro.au/stu3-latest",
-          			"required" : true
-				},
-				{
-					"key" : "add_value_tooltip",
-					"name" : "Add value tooltip",
-					"type" : "checkbox"
-				},
-				
-				{
-					"key" : "return_no_result",
-					"name" : "Return 'No Results Found'",
-					"type" : "checkbox"
-				},
-				{
-					"key" : "no_result_label",
-					"name" : "No Results Label",
-					"type" : "text",
-					"default" : "No Results Found",
-					"branchingLogic" : {
-    					"field": "return_no_result",
-    					"value": "true"
-					}
-				},
-								{
-					"key" : "no_result_code",
-					"name" : "No Results Code",
-					"type" : "text",
-					"default" : "_NRF_",
-					"branchingLogic" : {
-    					"field": "return_no_result",
-    					"value": "true"
-					}
-				}
-	],
+      ]
+    },
+    {
+      "key": "cc_token_endpoint",
+      "name": "OAuth2 token endpoint",
+      "type": "text",
+      "branchingLogic": {
+        "field": "authentication_type",
+        "value": "cc"
+      }
+    },
+    {
+      "key": "cc_client_id",
+      "name": "Client Id",
+      "type": "text",
+      "branchingLogic": {
+        "field": "authentication_type",
+        "value": "cc"
+      }
+    },
+    {
+      "key": "cc_client_secret",
+      "name": "Client Secret",
+      "type": "text",
+      "branchingLogic": {
+        "field": "authentication_type",
+        "value": "cc"
+      }
+    }
+  ],
+  "no-auth-pages": [
+    "FindValueSetService"
+  ],
   "compatibility": {
-    "php-version-min" : "5.4.0",
+    "php-version-min": "5.4.0",
     "redcap-version-min": "8.8.1"
   }
 }

@@ -9,19 +9,31 @@ This module allows a FHIR based terminology server to be an alternative ontology
 
 This is done using the ValueSet/$expand operation
 
+In version 0.3 of this module the online designer part of this module was changed to no longer talk directly from the
+web browser to the fhir server, instead a web service is included in the module to allow for the requests to be made via
+the redcap server. This change was needed to protect the authentication settings, it also allows the module to work from
+behind a proxy server.
 
 
 ## Using the module
-The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.2`
+The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.3`
 
 The module should then show up as an external module.
 
 The following site wide setings are available:
-  * `FHIR API URL` -this is the url for the fhir server. The default value should work out of the box, but people may want to run their own server to have better control of the available ValueSets. The default url is `https://ontoserver.csiro.au/stu3-latest` which being an Australian server has the Australian edition of SNOMED CT as its default.
+  * `FHIR API URL` -this is the url for the fhir server. Two possible fhir end points are listed, but people may want to run their own server to have better control of the available ValueSets. 
+     The two suggested fhir end points are:
+     * `https://r4.ontoserver.csiro.au/fhir` which an Australian server with the Australian edition of SNOMED CT as its default. The server also contains LOINC and other code systems.
+     * `https://snowstorm-fhir.snomedtools.org/fhir` is a test server hosted by snomed, it does not include LOINC or non-snomed code systems and valuesets. This means when selecting a valueset to use only the `SnomedCT Refset` and `SnomedCT isa implicit valueset` selection options will find a valueset.
   * `Add value tooltip` - The codes returned by lookup are returned in the format `code|display|system` this means the value displayed when an entry is selected is normally longer then the 12 or so characters normally used to display the code. This option will add a `title` attribute to the value display to show the value as a tooltip when the mouse is used to hover over the value. This will only show up in the data entry and survey forms, not testing in the online designed.
   * `Return 'No Results Found'` - This check box is used to indicate that a special value should be returned if no values are returned by a search. The purpose of this is to allow the option to be selected and then have an additional field get activated via branching logic to receive additional data.
- * `No Results Label` - The display value for the special value returned if the `return no results found` option is enabled. The Label cannot contain html markup.
- * `No Results Code` - The value for the special value returned if the `return no results found` option is enabled. The code cannot contain html markup, a single or double quote.
+     * `No Results Label` - The display value for the special value returned if the `return no results found` option is enabled. The Label cannot contain html markup.
+     * `No Results Code` - The value for the special value returned if the `return no results found` option is enabled. The code cannot contain html markup, a single or double quote.
+  * `Authentication Type` - The authentication to use when communicating with the FHIR server. This can be either `none`
+     or `OAuth2 Client Credentials`. The client credentials flow uses a client id and secret to obtain an access token.
+     * `OAuth2 token endpoint`  - The token endpoint used to obtain the access token. This is required for `Oauth2 Client Credentials` authentication type.
+     * `Client Id` - The client id to use to fetch an access token. This is required for `Oauth2 Client Credentials` authentication type.
+     * `Client Secret` - The client secret to use to fetch an access token. This is required for `Oauth2 Client Credentials` authentication type.
 
 ### Online designer
 
