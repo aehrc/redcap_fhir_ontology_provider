@@ -148,8 +148,9 @@ EOD;
                 $fhirUrl = substr($fhirUrl, 0, $strlen - 1);
             }
         }
-        $metadata = http_get($fhirUrl . '/metadata');
-        if ($metadata == FALSE) {
+        $headers = ['User-Agent: Redcap'];
+        $metadata = $this->httpGet($fhirUrl . '/metadata', $headers);
+        if ($metadata === FALSE) {
             $errors .= "Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
         }
         $authType = $settings['authentication_type'];
@@ -162,7 +163,7 @@ EOD;
             $params = array(
                 'grant_type' => 'client_credentials'
             );
-            $headers = [ 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret) ];
+            $headers[] = 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret);
 
             try {
                 $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
@@ -225,7 +226,7 @@ EOD;
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
         // Build URL to call
-        $headers = [];
+        $headers = ['User-Agent: Redcap'];
         $authToken = $this->getAuthToken();
         if ($authToken !== false) {
             $headers[] = 'Authorization: Bearer ' . $this->getAuthToken();
@@ -246,9 +247,13 @@ EOD;
         $results = array();
         if (is_array($list) && isset($expansion['contains'])) {
             // Loop through results
-
+            $hideChoice = $this->getHideChoice();
             foreach ($expansion['contains'] as $this_item) {
 
+                if (in_array($this_item['code'], $hideChoice)){
+                    // in hide choice list
+                    continue;
+                }
                 // Determine the value
                 // need to add the system as codes are not unique in SCT
                 $this_value = $this_item['code'] . "|" . $this_item['display'] . "|" . $this_item['system'];
@@ -270,6 +275,36 @@ EOD;
         // Return array of results
         return array_slice($results, 0, $result_limit, true);
     }
+
+    function getHideChoice()
+    {
+        $codesToHide=[];
+        if (isset($_GET['field'])){
+            $field = $_GET['field'];
+            if (isset($Proj->metadata[$_GET['field']])) {
+                $annotations = $Proj->metadata[$field]['field_annotation'];
+            }
+            else if (isset($_GET['pid'])){
+                $project_id = $_GET['pid'];
+                $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
+                $annotations = $dd_array[$field]['field_annotation'];
+            }
+            if ($annotations) {
+                $offset = 0;
+                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
+                    $listedCodesStr = $matches[1][0];
+                    $listedCodes = explode(',', $listedCodesStr);
+                    foreach($listedCodes as $code){
+                        array_push($codesToHide, trim($code));
+                    }
+                    $offset = $matches[0][1] + strlen($matches[0][0]);
+                }
+            }
+        }
+
+        return $codesToHide;
+    }
+
 
     /**
      * Return a string which will be placed in the online designer for
@@ -325,7 +360,7 @@ EOD;
 
   function show_selected_valueset(event){
         selected_valueset = $('#fhir_valueset_search_code').text();
-        if (selected_valueset == ''){
+        if (selected_valueset === ''){
           selected_valueset = $('#fhir_value_set').val();
         }
         if (selected_valueset){
@@ -520,6 +555,7 @@ EOD;
 
     public function findValueSet($type, $query)
     {
+        $contentType = 'application/x-www-form-urlencoded';
         if ($type === 'name') {
             $method = "GET";
             $params = ['name' => $query, '_summary' => true, '_count' => 20];
@@ -545,7 +581,7 @@ EOD;
                 $result = [];
                 if (isset($data['entry'])) {
                     foreach ($data['entry'] as $this_entry) {
-                        if (isset($this_entry['resource'][valueSet])) {
+                        if (isset($this_entry['resource']['valueSet'])) {
                             $result[] = ['label' => $this_entry['resource']['name'], 'value' => $this_entry['resource']['valueSet']];
                         }
                     }
@@ -592,7 +628,7 @@ EOD;
             };
         } elseif ($type === 'loinc_answer') {
             $method = "POST";
-            $contentType = "application/json; charset=utf-8";
+            $contentType = "application/json";
             $postData = [
                 "resourceType" => "Parameters",
                 "parameter" => [
@@ -634,7 +670,7 @@ EOD;
         } else {
             return ['error' => "Unknown search type $type"];
         }
-        $headers = [];
+        $headers = ['User-Agent: Redcap'];
         $authToken = $this->getAuthToken();
         if ($authToken !== false) {
             $headers[] = 'Authorization: Bearer ' . $this->getAuthToken();
@@ -656,7 +692,7 @@ EOD;
     {
         $params = ["url" => $valueSet, "count" => 10];
         $fullUrl = $this->getFhirServerUri() . '/ValueSet/$expand?' . http_build_query($params);
-        $headers = [];
+        $headers = ['User-Agent: Redcap'];
         $authToken = $this->getAuthToken();
         if ($authToken !== false) {
             $headers[] = 'Authorization: Bearer ' . $this->getAuthToken();
@@ -703,7 +739,14 @@ EOD;
     public function httpPost($fullUrl, $postData, $contentType, $headers)
     {
         // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
-        if (function_exists('curl_init') || empty($headers)) {
+        // but the curl version will overwrite the content type header if other headers are included.
+        if (function_exists('curl_init') && !empty($headers)
+                 && $contentType && $contentType != 'application/x-www-form-urlencoded'){
+            $fullHeaders = $headers;
+            $fullHeaders[] = 'Content-type: '.$contentType;
+            return http_post($fullUrl, $postData, null, $contentType, '', $fullHeaders);
+        }
+        else if (function_exists('curl_init') || empty($headers)) {
             return http_post($fullUrl, $postData, null, $contentType, '', $headers);
         }
         // If params are given as an array, then convert to query string format, else leave as is
@@ -784,7 +827,8 @@ EOD;
         $params = array(
             'grant_type' => 'client_credentials'
         );
-        $headers = ['Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret)];
+        $headers = ['User-Agent: Redcap',
+            'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret)];
 
         $clear = true;
         try {

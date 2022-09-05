@@ -6,7 +6,7 @@
     {
       "name": "David Conlan",
       "email": "david.conlan@csiro.au",
-      "institution": "The Australian E-Heath Research Centre"
+      "institution": "Commonwealth Science & Industrial Research Organisation"
     }
   ],
   "permissions": [
@@ -23,7 +23,7 @@
     },
     {
       "key": "fhir_api_url_info",
-      "name": "The FHIR server url to use. eg. https://r4.ontoserver.csiro.au/fhir or https://snowstorm-fhir.snomedtools.org/fhir. Don't leave a trailing slash.",
+      "name": "The FHIR server url to use. eg. https://tx.ontoserver.csiro.au/fhir or https://snowstorm-fhir.snomedtools.org/fhir. Don't leave a trailing slash.",
       "type": "descriptive"
     },
     {

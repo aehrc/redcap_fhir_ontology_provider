@@ -14,9 +14,11 @@ web browser to the fhir server, instead a web service is included in the module 
 the redcap server. This change was needed to protect the authentication settings, it also allows the module to work from
 behind a proxy server.
 
+In version 0.4 of this module, limited support for @HIDECHOICE was added.
+
 
 ## Using the module
-The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.3`
+The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.4`
 
 The module should then show up as an external module.
 
@@ -57,6 +59,21 @@ Once enabled the online designer will have a new ontology source availble. If se
 ![Online Designer](documentation/online_designer.png)
 
 ![Show Details](documentation/ShowDetails.png)
+
+
+### @HIDECHOICE support
+As part of the 0.4 release extra functionality has been added to this module for it to consider the `@HIDECHOICE`
+action tag. This action tag is available for choice fields to indicate a choice should not be shown. 
+The @HIDECHOICE action tag is specified at a field level, the values will only be hidden for the field the
+action tag is specified for. The set of values to hide is defined using a comma separated list of codes for the
+values which should be hidden. The value is matched against the FHIR code only, it does not consider the system
+of the value. If a valueset contains multiple values with the same code but different systems, then this cannot be
+differentiated. The module considers all @HIDECHOICE entries found in the annotations property of the
+field. The module will not try to expand piped variables in the choice list. 
+```text
+@HIDECHOICE='code1,code2'
+```
+
 
 ### Label Cache Issue
 
