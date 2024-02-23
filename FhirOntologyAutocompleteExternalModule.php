@@ -149,11 +149,16 @@ EOD;
             }
         }
         $headers = ['User-Agent: Redcap'];
+        $authType = $settings['authentication_type'];
+        if ($authType === 'basic') {
+            $authUser = $settings['basic_user_id'];
+            $authPassword = $settings['basic_user_password'];
+            $headers[] = 'Authorization: Basic ' . base64_encode($authUser . ':' . $authPassword);
+        }
         $metadata = $this->httpGet($fhirUrl . '/metadata', $headers);
         if ($metadata === FALSE) {
             $errors .= "Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
         }
-        $authType = $settings['authentication_type'];
         if ($authType === 'cc') {
             $authEndpoint = $settings['cc_token_endpoint'];
             $clientId = $settings['cc_client_id'];
@@ -215,6 +220,17 @@ EOD;
         return $ontologyServer;
     }
 
+    public function hasSnomedSupport()
+    {
+        return $this->getSystemSetting('snomed_support');
+    }
+
+    public function hasLoincSupport()
+    {
+        return $this->getSystemSetting('loinc_support');
+    }
+
+
     /**
      * Search API with a search term for a given ontology
      * Returns array of results with Notation as key and PrefLabel as value.
@@ -227,9 +243,9 @@ EOD;
 
         // Build URL to call
         $headers = ['User-Agent: Redcap'];
-        $authToken = $this->getAuthToken();
-        if ($authToken !== false) {
-            $headers[] = 'Authorization: Bearer ' . $this->getAuthToken();
+        $authHeader = $this->getAuthHeader();
+        if ($authHeader !== false) {
+            $headers[] = $authHeader;
         }
         //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
         // need to escape the $expand in the url! 
@@ -256,7 +272,7 @@ EOD;
                 }
                 // Determine the value
                 // need to add the system as codes are not unique in SCT
-                $this_value = $this_item['code'] . "|" . $this_item['display'] . "|" . $this_item['system'];
+                $this_value = $this_item['code'] . "|" . $this_item['system'];
 
                 // Add to array
                 $results[$this_value] = $this_item['display'];
@@ -322,6 +338,18 @@ EOD;
     {
 
         $findValueSetService_url = $this->getUrl('FindValueSetService.php', false, true);
+        $loincSupport = $this->hasLoincSupport();
+        $implicitSearchOptions = '';
+        if ($this->hasSnomedSupport()){
+            $implicitSearchOptions = $implicitSearchOptions .
+                '<option value="refset">SnomedCT Refset</option>\n' .
+                '<option value="isa">SnomedCT isa implicit valueset</option>\n';
+        }
+        if ($loincSupport === "ontoserver" || $loincSupport === "filter"){
+            $implicitSearchOptions = $implicitSearchOptions .
+                '<option value="loinc_answer">LOINC implicit answer set</option>';
+        }
+
         $onlineDesignerHtml = <<<EOD
 <script type="text/javascript">
 
@@ -351,6 +379,14 @@ EOD;
         event.preventDefault();
         return false;
   }
+
+  function manual_valuset_update(event){
+        selected_valueset = $('#fhir_value_set').val();
+        if (selected_valueset){
+          update_ontology_selection('FHIR', selected_valueset);
+        }
+  }
+
 
   function JSON_STRING(data){
     this.data = data;
@@ -483,10 +519,8 @@ EOD;
           class='x-form-text x-form-field' style='padding-right:0;height:22px;width:330px;max-width:330px;'>
     <option value=""> -- choose search criteria -- </option>
     <option value="name">ValueSet Name</option>
-    <option value="codesystem">By CodeSystem(Name)</option>
-    <option value="refset">SnomedCT Refset</option>
-    <option value="isa">SnomedCT isa implicit valueset</option>
-    <option value="loinc_answer">LOINC implicit answer set</option>
+    <option value="codesystem">By CodeSystem(Title)</option>
+    {$implicitSearchOptions}
   </select><br>
   <div class="ui-front">
    <input  id="fhir_valueset_search" class="x-form-text x-form-field" size="25">
@@ -494,7 +528,7 @@ EOD;
    <a class="ui-button ui-widget ui-corner-all" href="#" onclick="move_selected_valueset(event)">Select</a>
    </div>
 
-  <input id="fhir_value_set" class="x-form-text x-form-field" size="25" type="text" readonly="readonly">
+  <input id="fhir_value_set" class="x-form-text x-form-field" size="25" type="text" onchange="manual_valuset_update(event)">
    <a class="ui-button ui-widget ui-corner-all" href="#" onclick="show_selected_valueset(event)">Show Details</a>
   
    <div id="fhir_valueset_dialog" title="ValueSet Details">
@@ -543,11 +577,11 @@ EOD;
 
     public function isValidValuesetQueryType($type)
     {
+        $loincSupport = $this->hasLoincSupport();
         if ('name' === $type ||
             'codesystem' === $type ||
-            'refset' === $type ||
-            'isa' === $type ||
-            'loinc_answer' === $type) {
+            (('refset' === $type || 'isa' === $type) && $this->hasSnomedSupport()) ||
+            (('loinc_answer' === $type) && ('ontoserver' === $loincSupport || 'filter' == $loincSupport))) {
             return true;
         }
         return false;
@@ -556,6 +590,8 @@ EOD;
     public function findValueSet($type, $query)
     {
         $contentType = 'application/x-www-form-urlencoded';
+        $snomedSupport = $this->hasSnomedSupport();
+        $loincSupport = $this->hasLoincSupport();
         if ($type === 'name') {
             $method = "GET";
             $params = ['name' => $query, '_summary' => true, '_count' => 20];
@@ -575,14 +611,14 @@ EOD;
             };
         } elseif ($type === 'codesystem') {
             $method = "GET";
-            $params = ['name' => $query, '_elements' => 'name,valueSet', '_count' => 20];
+            $params = ['title' => $query, '_elements' => 'title,valueSet', '_count' => 20];
             $url = "/CodeSystem";
             $processFunction = function ($data) {
                 $result = [];
                 if (isset($data['entry'])) {
                     foreach ($data['entry'] as $this_entry) {
                         if (isset($this_entry['resource']['valueSet'])) {
-                            $result[] = ['label' => $this_entry['resource']['name'], 'value' => $this_entry['resource']['valueSet']];
+                            $result[] = ['label' => $this_entry['resource']['title'], 'value' => $this_entry['resource']['valueSet']];
                         }
                     }
                 }
@@ -593,6 +629,9 @@ EOD;
                 return $result;
             };
         } elseif ($type === 'refset') {
+            if (!$snomedSupport){
+                return []; // snomed implicit valuesets not supported
+            }
             $method = "GET";
             $params = ['filter' => $query, 'url' => 'http://snomed.info/sct?fhir_vs=refset', '_count' => 20];
             $url = '/ValueSet/$expand';
@@ -610,6 +649,9 @@ EOD;
                 return $result;
             };
         } elseif ($type === 'isa') {
+            if (!$snomedSupport){
+                return []; // snomed implicit valuesets not supported
+            }
             $method = "GET";
             $params = ['filter' => $query, 'url' => 'http://snomed.info/sct?fhir_vs', '_count' => 20];
             $url = '/ValueSet/$expand';
@@ -627,53 +669,80 @@ EOD;
                 return $result;
             };
         } elseif ($type === 'loinc_answer') {
-            $method = "POST";
-            $contentType = "application/json";
-            $postData = [
-                "resourceType" => "Parameters",
-                "parameter" => [
-                    ["name" => "filter", "valueString" => $query],
-                    ["name" => "_count", "valueInteger" => 20],
-                    ["name" => "valueSet",
-                        "resource" => [
-                            "resourceType" => "ValueSet",
-                            "compose" => [
-                                "include" => [[
-                                    "system" => "http://loinc.org",
-                                    "filter" => [
-                                        ["property" => "parent",
-                                            "op" => "=",
-                                            "value" => "LL"]
-                                    ]
-                                ]]
+            if ('ontoserver' === $loincSupport){
+                $method = "POST";
+                $contentType = "application/json";
+                $postData = [
+                    "resourceType" => "Parameters",
+                    "parameter" => [
+                        ["name" => "filter", "valueString" => $query],
+                        ["name" => "_count", "valueInteger" => 20],
+                        ["name" => "valueSet",
+                            "resource" => [
+                                "resourceType" => "ValueSet",
+                                "compose" => [
+                                    "include" => [[
+                                        "system" => "http://loinc.org",
+                                        "filter" => [
+                                            ["property" => "parent",
+                                                "op" => "=",
+                                                "value" => "LL"]
+                                        ]
+                                    ]]
+                                ]
                             ]
                         ]
                     ]
-                ]
-            ];
-            $postData = json_encode($postData, JSON_UNESCAPED_SLASHES);
+                ];
+                $postData = json_encode($postData, JSON_UNESCAPED_SLASHES);
 
-            $url = '/ValueSet/$expand';
-            $processFunction = function ($data) {
-                $result = [];
-                if (isset($data['expansion']) && isset($data['expansion']['contains'])) {
-                    foreach ($data['expansion']['contains'] as $this_entry) {
-                        $result[] = ['label' => $this_entry['display'], 'value' => 'http://loinc.org/vs/' . $this_entry['code']];
+                $url = '/ValueSet/$expand';
+                $processFunction = function ($data) {
+                    $result = [];
+                    if (isset($data['expansion']) && isset($data['expansion']['contains'])) {
+                        foreach ($data['expansion']['contains'] as $this_entry) {
+                            $result[] = ['label' => $this_entry['display'], 'value' => 'http://loinc.org/vs/' . $this_entry['code']];
+                        }
                     }
-                }
-                if (empty($result)) {
-                    $result[] = ['label' => 'No matches found', 'value' => '__NMF__'];
-                }
+                    if (empty($result)) {
+                        $result[] = ['label' => 'No matches found', 'value' => '__NMF__'];
+                    }
 
-                return $result;
-            };
+                    return $result;
+                };
+            }
+            elseif ('filter' === $loincSupport){
+                $method = "GET";
+                $params = ['filter' => $query, 'url' => 'http://loinc.org/vs', '_count' => 100];
+                $url = '/ValueSet/$expand';
+                $processFunction = function ($data) {
+                    $result = [];
+                    if (isset($data['expansion']) && isset($data['expansion']['contains'])) {
+                        foreach ($data['expansion']['contains'] as $this_entry) {
+                            if (substr($this_entry['code'], 0, 2 ) === 'LL'){
+                                $result[] = ['label' => $this_entry['display'], 'value' => 'http://loinc.org/vs/' . $this_entry['code']];
+                            }
+                            if (count($result) >= 20){
+                                break;
+                            }
+                        }
+                    }
+                    if (empty($result)) {
+                        $result[] = ['label' => 'No matches found', 'value' => '__NMF__'];
+                    }
+                    return $result;
+                };
+            }
+            else {
+                return []; // loinc not supported
+            }
         } else {
             return ['error' => "Unknown search type $type"];
         }
         $headers = ['User-Agent: Redcap'];
-        $authToken = $this->getAuthToken();
-        if ($authToken !== false) {
-            $headers[] = 'Authorization: Bearer ' . $this->getAuthToken();
+        $authHeader = $this->getAuthHeader();
+        if ($authHeader !== false) {
+            $headers[] = $authHeader;
         }
         if ('GET' === $method) {
             $fullUrl = $this->getFhirServerUri() . $url . '?' . http_build_query($params);
@@ -693,9 +762,9 @@ EOD;
         $params = ["url" => $valueSet, "count" => 10];
         $fullUrl = $this->getFhirServerUri() . '/ValueSet/$expand?' . http_build_query($params);
         $headers = ['User-Agent: Redcap'];
-        $authToken = $this->getAuthToken();
-        if ($authToken !== false) {
-            $headers[] = 'Authorization: Bearer ' . $this->getAuthToken();
+        $authHeader = $this->getAuthHeader();
+        if ($authHeader !== false) {
+            $headers[] = $authHeader;
         }
         return $this->httpGet($fullUrl, $headers);
     }
@@ -798,7 +867,7 @@ EOD;
     }
 
 
-    public function getAuthToken()
+    public function getAuthHeader()
     {
         $authType = $this->getSystemSetting('authentication_type');
         if ($authType === 'cc') {
@@ -806,7 +875,13 @@ EOD;
             $clientId = $this->getSystemSetting('cc_client_id');
             $clientSecret = $this->getSystemSetting('cc_client_secret');
 
-            return $this->getClientCredentialsToken($authEndpoint, $clientId, $clientSecret);
+            $authToken = $this->getClientCredentialsToken($authEndpoint, $clientId, $clientSecret);
+            return 'Authorization: Bearer ' . $authToken;
+        }
+        elseif ($authType === 'basic') {
+            $userId = $this->getSystemSetting('basic_user_id');
+            $userPassword = $this->getSystemSetting('basic_user_password');
+            return 'Authorization: Basic ' . base64_encode($userId . ':' . $userPassword);
         }
         return false;
     }

@@ -2,6 +2,7 @@
   "name": "Fhir Ontology Autocomplete Module",
   "namespace": "AEHRC\\FhirOntologyAutocompleteExternalModule",
   "description": "This module provides support for referencing an external Fhir based ontology server to lookup values.",
+  "framework-version": 1,
   "authors": [
     {
       "name": "David Conlan",
@@ -25,6 +26,42 @@
       "key": "fhir_api_url_info",
       "name": "The FHIR server url to use. eg. https://tx.ontoserver.csiro.au/fhir or https://snowstorm-fhir.snomedtools.org/fhir. Don't leave a trailing slash.",
       "type": "descriptive"
+    },
+    {
+      "key": "snomed_support_info",
+      "name": "Does the FHIR server support implicit SNOMEDCT valuesets?",
+      "type": "descriptive"
+    },
+    {
+      "key": "snomed_support",
+      "name": "SNOMEDCT Support",
+      "type": "checkbox",
+      "required": true
+    },
+    {
+      "key": "loinc_support_info",
+      "name": "Does the FHIR server support implicit LOINC valuesets?",
+      "type": "descriptive"
+    },
+    {
+      "key": "loinc_support",
+      "name": "LOINC Support",
+      "type": "dropdown",
+      "required": true,
+      "choices": [
+        {
+          "value": "none",
+          "name": "LOINC not available"
+        },
+        {
+          "value": "ontoserver",
+          "name": "Ontoserver LL parent concept"
+        },
+        {
+          "value": "filter",
+          "name": "Filter LLxxxxx concepts from expand"
+        }
+      ]
     },
     {
       "key": "add_value_tooltip",
@@ -58,7 +95,7 @@
     },
     {
       "key": "fhir_api_auth_info",
-      "name": "The fhir server may require some form of authentication, currently only OAuth2 Client Credentials is supported. Communication with the FHIR server is made by the redcap server, not the users browser.",
+      "name": "The fhir server may require some form of authentication, currently OAuth2 Client Credentials and Basic Auth is supported. Communication with the FHIR server is made by the redcap server, not the users browser.",
       "type": "descriptive"
     },
     {
@@ -74,6 +111,10 @@
         {
           "value": "cc",
           "name": "OAuth2 Client Credentials"
+        },
+        {
+          "value": "basic",
+          "name": "Basic Auth"
         }
       ]
     },
@@ -102,6 +143,24 @@
       "branchingLogic": {
         "field": "authentication_type",
         "value": "cc"
+      }
+    },
+    {
+      "key": "basic_user_id",
+      "name": "Basic Auth User Id",
+      "type": "text",
+      "branchingLogic": {
+        "field": "authentication_type",
+        "value": "basic"
+      }
+    },
+    {
+      "key": "basic_user_password",
+      "name": "Basic Auth User Password",
+      "type": "text",
+      "branchingLogic": {
+        "field": "authentication_type",
+        "value": "basic"
       }
     }
   ],
