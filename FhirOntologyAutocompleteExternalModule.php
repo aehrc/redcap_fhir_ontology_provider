@@ -179,11 +179,15 @@ EOD;
             try {
                 $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
                 if ($response === false) {
-                    $r = implode("", $http_response_header);
+                    $r = isset($http_response_header) ? implode("", $http_response_header) : '';
                     $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' response = false, r='" . $r . "'\n";
                 } else {
-                    $responseJson = json_decode($response, true);
-                    if (!array_key_exists('access_token', $responseJson)) {
+                    // a false or unparseable response decodes to null, and array_key_exists(null)
+                    // is a fatal TypeError on PHP 8
+                    $responseJson = is_string($response) ? json_decode($response, true) : null;
+                    if (!is_array($responseJson)) {
+                        $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no parseable response\n";
+                    } else if (!array_key_exists('access_token', $responseJson)) {
                         $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
                     }
                 }
@@ -248,13 +252,8 @@ EOD;
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
         // Build URL to call
-        $headers = ['User-Agent: Redcap'];
-        $authHeader = $this->getAuthHeader();
-        if ($authHeader !== false) {
-            $headers[] = $authHeader;
-        }
         //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
-        // need to escape the $expand in the url! 
+        // need to escape the $expand in the url!
         $url = $fhir_server_uri . "/ValueSet/\$expand?" . http_build_query(array(
                 'url' => $valueset_id,
                 'filter' => $search_term,
@@ -262,15 +261,24 @@ EOD;
             ));
         // Call the URL
 
+        $fhirFailed = false;
         if ($this->isCircuitOpen()) {
             // Server has failed repeatedly - fail fast rather than tying up a web
             // server process on a request we already expect to time out.
             $json = false;
+            $fhirFailed = true;
         }
         else {
+            $headers = ['User-Agent: Redcap'];
+            $authHeader = $this->getAuthHeader();
+            if ($authHeader !== false) {
+                $headers[] = $authHeader;
+            }
+            $startedAt = microtime(true);
             $json = $this->httpGet($url, $headers);
             if ($json === false) {
-                $this->recordFhirFailure();
+                $fhirFailed = true;
+                $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
             }
             else {
                 $this->recordFhirSuccess();
@@ -305,7 +313,7 @@ EOD;
             }
         }
 
-        if (!$results) {
+        if (!$results && !$fhirFailed) {
             // no results found
             $return_no_result = $this->getSystemSetting('return_no_result');
             if ($return_no_result) {
@@ -336,7 +344,8 @@ EOD;
                 return $cache[$cacheKey];
             }
             $annotations = null;
-            if (isset($Proj->metadata[$field])) {
+            if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
+                    && isset($Proj->metadata[$field]['field_annotation'])) {
                 $annotations = $Proj->metadata[$field]['field_annotation'];
             }
             else if ($project_id !== null){
@@ -788,15 +797,16 @@ EOD;
         } else {
             return ['error' => "Unknown search type $type"];
         }
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast.
+            return [];
+        }
         $headers = ['User-Agent: Redcap'];
         $authHeader = $this->getAuthHeader();
         if ($authHeader !== false) {
             $headers[] = $authHeader;
         }
-        if ($this->isCircuitOpen()) {
-            // Server has failed repeatedly - fail fast.
-            return [];
-        }
+        $startedAt = microtime(true);
         if ('GET' === $method) {
             $fullUrl = $this->getFhirServerUri() . $url . '?' . http_build_query($params);
             $result_json = $this->httpGet($fullUrl, $headers);
@@ -805,7 +815,7 @@ EOD;
             $result_json = $this->httpPost($fullUrl, $postData, $contentType, $headers);
         }
         if ($result_json === false) {
-            $this->recordFhirFailure();
+            $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
             return [];
         }
         $this->recordFhirSuccess();
@@ -816,19 +826,20 @@ EOD;
     {
         $params = ["url" => $valueSet, "count" => 10];
         $fullUrl = $this->getFhirServerUri() . '/ValueSet/$expand?' . http_build_query($params);
-        $headers = ['User-Agent: Redcap'];
-        $authHeader = $this->getAuthHeader();
-        if ($authHeader !== false) {
-            $headers[] = $authHeader;
-        }
         if ($this->isCircuitOpen()) {
             // Server has failed repeatedly - fail fast. false tells the service
             // layer to emit a 502 rather than a misleading empty success.
             return false;
         }
+        $headers = ['User-Agent: Redcap'];
+        $authHeader = $this->getAuthHeader();
+        if ($authHeader !== false) {
+            $headers[] = $authHeader;
+        }
+        $startedAt = microtime(true);
         $response = $this->httpGet($fullUrl, $headers);
         if ($response === false) {
-            $this->recordFhirFailure();
+            $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
             return false;
         }
         $this->recordFhirSuccess();
@@ -852,13 +863,25 @@ EOD;
 
     /**
      * True while the breaker is open, i.e. the FHIR server has failed repeatedly and
-     * we should fail fast instead of dialing out again. Once the open window elapses
-     * a single trial request is allowed through to see if the server has recovered.
+     * we should fail fast instead of dialing out again. Once the open window elapses,
+     * the single caller that observes this re-arms the window for BREAKER_OPEN_SECONDS
+     * before returning false, so exactly one concurrent request is allowed through as
+     * a trial while every other concurrent caller keeps failing fast.
      */
     public function isCircuitOpen()
     {
-        $openUntil = $this->getSystemSetting('fhir_breaker_open_until');
-        return $openUntil && time() < (int)$openUntil;
+        $openUntil = (int)$this->getSystemSetting('fhir_breaker_open_until');
+        if (!$openUntil) {
+            return false;
+        }
+        if (time() < $openUntil) {
+            return true;
+        }
+        // Window elapsed. Re-arm before returning so concurrent callers keep failing
+        // fast while this one request probes the server. recordFhirSuccess() clears
+        // both keys when the probe succeeds, so the re-arm costs nothing on recovery.
+        $this->setSystemSetting('fhir_breaker_open_until', time() + self::BREAKER_OPEN_SECONDS);
+        return false;
     }
 
     public function recordFhirFailure()
@@ -867,6 +890,18 @@ EOD;
         $this->setSystemSetting('fhir_breaker_failures', $failures);
         if ($failures >= self::BREAKER_FAILURE_THRESHOLD) {
             $this->setSystemSetting('fhir_breaker_open_until', time() + self::BREAKER_OPEN_SECONDS);
+        }
+    }
+
+    /**
+     * A failure only indicates server health if the call actually hung. A fast
+     * rejection (e.g. a malformed valueset url returning 4xx) must not trip the
+     * breaker for every other project on the system.
+     */
+    public function recordFhirFailureIfSlow($elapsedSeconds)
+    {
+        if ($elapsedSeconds >= (0.8 * $this->getFhirTimeout())) {
+            $this->recordFhirFailure();
         }
     }
 
@@ -989,6 +1024,9 @@ EOD;
             $clientSecret = $this->getSystemSetting('cc_client_secret');
 
             $authToken = $this->getClientCredentialsToken($authEndpoint, $clientId, $clientSecret);
+            if ($authToken === false) {
+                return false;
+            }
             return 'Authorization: Bearer ' . $authToken;
         }
         elseif ($authType === 'basic') {
