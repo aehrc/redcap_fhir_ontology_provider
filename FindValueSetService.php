@@ -70,6 +70,9 @@ if (!isset($params['action'])){
         }
         $valueSet = $params['valueSet'];
     }
+    else {
+        $sendErrorResponse('Invalid Request', 'Unknown action.');
+    }
 }
 
 if ('find' === $action){
@@ -77,7 +80,20 @@ if ('find' === $action){
     echo json_encode($result, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
 }
 else {
-    echo $module->getValueSetInfo($valueSet);
+    $info = $module->getValueSetInfo($valueSet);
+    if ($info === false) {
+        // breaker open, or the server did not answer. Report it as an
+        // OperationOutcome so the designer dialog shows a real message
+        // instead of a silently empty result.
+        http_response_code(502);
+        echo json_encode(['resourceType' => 'OperationOutcome',
+            'issue' => [['severity' => 'error', 'code' => 'timeout',
+                'diagnostics' => 'The terminology server is not responding. Please try again shortly.']]],
+            JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
+    }
+    else {
+        echo $info;
+    }
 }
 
 exit();

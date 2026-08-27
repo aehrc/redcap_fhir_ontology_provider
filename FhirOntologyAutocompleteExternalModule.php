@@ -277,24 +277,31 @@ EOD;
             }
         }
         // Parse the JSON into an array
-        $list = json_decode($json, true);
-        $expansion = $list['expansion'];
+        $list = is_string($json) ? json_decode($json, true) : null;
         $results = array();
-        if (is_array($list) && isset($expansion['contains'])) {
+        if (is_array($list) && isset($list['expansion']['contains'])) {
+            $expansion = $list['expansion'];
             // Loop through results
             $hideChoice = $this->getHideChoice();
             foreach ($expansion['contains'] as $this_item) {
 
-                if (in_array($this_item['code'], $hideChoice)){
+                // code and system are not guaranteed present by FHIR
+                $code = isset($this_item['code']) ? $this_item['code'] : '';
+                $system = isset($this_item['system']) ? $this_item['system'] : '';
+                if ('' === $code) {
+                    // nothing storable without a code - skip rather than emitting "|system"
+                    continue;
+                }
+                if (in_array($code, $hideChoice)){
                     // in hide choice list
                     continue;
                 }
                 // Determine the value
                 // need to add the system as codes are not unique in SCT
-                $this_value = $this_item['code'] . "|" . $this_item['system'];
+                $this_value = $code . "|" . $system;
 
                 // Add to array
-                $results[$this_value] = $this_item['display'];
+                $results[$this_value] = isset($this_item['display']) ? $this_item['display'] : $code;
             }
         }
 
