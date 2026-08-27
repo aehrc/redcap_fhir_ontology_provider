@@ -1006,15 +1006,27 @@ EOD;
         $clear = true;
         try {
             $response = $this->httpPost($tokenEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
-            $responseJson = json_decode($response, true);
-            if (array_key_exists('access_token', $responseJson)) {
+            // a false or unparseable response decodes to null, and array_key_exists(null)
+            // is a fatal TypeError on PHP 8
+            $responseJson = is_string($response) ? json_decode($response, true) : null;
+            if (!is_array($responseJson)) {
+                error_log("Failed to negotiate auth token : no parseable response from " . $tokenEndpoint);
+            } elseif (array_key_exists('access_token', $responseJson)) {
                 $clear = false;
                 $_SESSION['FHIR_ONTOLOGY_TOKEN'] = $responseJson['access_token'];
-                if (array_key_exists('expires_in', $responseJson)) {
-                    $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + ($responseJson['expires_in'] * 1000);
-                } else {
-                    $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + (60 * 60 * 1000);
+                // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
+                // * 1000 cached a 3600s token for roughly 41 days. Renew early by
+                // margin = min(60, floor(lifetime / 2)): a minute early for normal
+                // lifetimes, halfway through for very short ones, and never an expiry
+                // beyond the real one.
+                $lifetime = array_key_exists('expires_in', $responseJson)
+                    ? (int)$responseJson['expires_in']
+                    : 3600;
+                if ($lifetime < 1) {
+                    $lifetime = 1;
                 }
+                $margin = (int)min(60, floor($lifetime / 2));
+                $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + $lifetime - $margin;
             } elseif (array_key_exists('error', $responseJson)) {
                 error_log("Failed to negotiate auth token : " . $responseJson['error'] . " - " . $responseJson['error_description']);
             } else {
