@@ -164,9 +164,6 @@
       }
     }
   ],
-  "no-auth-pages": [
-    "FindValueSetService"
-  ],
   "compatibility": {
     "php-version-min": "5.4.0",
     "redcap-version-min": "8.8.1"
