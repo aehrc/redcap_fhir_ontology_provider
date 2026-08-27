@@ -150,7 +150,7 @@
     {
       "key": "cc_client_secret",
       "name": "Client Secret",
-      "type": "text",
+      "type": "password",
       "branchingLogic": {
         "field": "authentication_type",
         "value": "cc"
@@ -168,7 +168,7 @@
     {
       "key": "basic_user_password",
       "name": "Basic Auth User Password",
-      "type": "text",
+      "type": "password",
       "branchingLogic": {
         "field": "authentication_type",
         "value": "basic"
