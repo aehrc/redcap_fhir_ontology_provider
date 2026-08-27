@@ -31,6 +31,8 @@ use ExternalModules\ExternalModules;
 
 class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule implements \OntologyProvider
 {
+    /** Fallback timeout (seconds) used when the 'fhir_timeout' setting is blank or invalid. */
+    const DEFAULT_TIMEOUT = 10;
 
     public function __construct()
     {
@@ -770,11 +772,26 @@ EOD;
     }
 
 
+    /**
+     * Maximum number of seconds to wait on the FHIR server. Without a limit a slow
+     * or unavailable server holds a web server process open for the system default,
+     * which can exhaust the pool and take all of REDCap down with it.
+     */
+    public function getFhirTimeout()
+    {
+        $timeout = $this->getSystemSetting('fhir_timeout');
+        if (is_numeric($timeout) && (int)$timeout > 0) {
+            return (int)$timeout;
+        }
+        return self::DEFAULT_TIMEOUT;
+    }
+
     public function httpGet($fullUrl, $headers)
     {
+        $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_get in init_functions doesn't include the headers.
         if (function_exists('curl_init') || empty($headers)) {
-            return http_get($fullUrl, null, '', $headers, null);
+            return http_get($fullUrl, $timeout, '', $headers, null);
         }
         if (ini_get('allow_url_fopen')) {
             // Set http array for file_get_contents
@@ -782,7 +799,7 @@ EOD;
             foreach ($headers as $hvalue) {
                 $headerText .= $hvalue . "\r\n";
             }
-            $http_array = array('method' => 'GET', 'header' => $headerText);
+            $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout);
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
                 $http_array['proxy'] = str_replace(array('http://', 'https://'), array('tcp://', 'tcp://'), PROXY_HOSTNAME);
@@ -807,16 +824,17 @@ EOD;
 
     public function httpPost($fullUrl, $postData, $contentType, $headers)
     {
+        $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
         // but the curl version will overwrite the content type header if other headers are included.
         if (function_exists('curl_init') && !empty($headers)
                  && $contentType && $contentType != 'application/x-www-form-urlencoded'){
             $fullHeaders = $headers;
             $fullHeaders[] = 'Content-type: '.$contentType;
-            return http_post($fullUrl, $postData, null, $contentType, '', $fullHeaders);
+            return http_post($fullUrl, $postData, $timeout, $contentType, '', $fullHeaders);
         }
         else if (function_exists('curl_init') || empty($headers)) {
-            return http_post($fullUrl, $postData, null, $contentType, '', $headers);
+            return http_post($fullUrl, $postData, $timeout, $contentType, '', $headers);
         }
         // If params are given as an array, then convert to query string format, else leave as is
         if ($contentType == 'application/json') {
@@ -839,7 +857,8 @@ EOD;
 
             $http_array = array('method' => 'POST',
                 'header' => "Content-type: $contentType" . "\r\n" . $headerText . "Content-Length: " . strlen($param_string) . "\r\n",
-                'content' => $param_string
+                'content' => $param_string,
+                'timeout' => $timeout
             );
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
