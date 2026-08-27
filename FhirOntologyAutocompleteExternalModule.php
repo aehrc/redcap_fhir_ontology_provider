@@ -313,16 +313,30 @@ EOD;
 
     function getHideChoice()
     {
+        // $Proj must be pulled in explicitly. Without this it is always null inside
+        // the method, so the in-memory fast path below never runs and every single
+        // keystroke falls through to a full getDataDictionary() call.
+        global $Proj;
+        // one lookup per request per field - autocomplete fires this on every keystroke
+        static $cache = array();
+
         $codesToHide=[];
         if (isset($_GET['field'])){
             $field = $_GET['field'];
-            if (isset($Proj->metadata[$_GET['field']])) {
+            $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
+            $cacheKey = $project_id . '|' . $field;
+            if (isset($cache[$cacheKey])) {
+                return $cache[$cacheKey];
+            }
+            $annotations = null;
+            if (isset($Proj->metadata[$field])) {
                 $annotations = $Proj->metadata[$field]['field_annotation'];
             }
-            else if (isset($_GET['pid'])){
-                $project_id = $_GET['pid'];
+            else if ($project_id !== null){
                 $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
-                $annotations = $dd_array[$field]['field_annotation'];
+                $annotations = isset($dd_array[$field]['field_annotation'])
+                    ? $dd_array[$field]['field_annotation']
+                    : null;
             }
             if ($annotations) {
                 $offset = 0;
@@ -335,6 +349,7 @@ EOD;
                     $offset = $matches[0][1] + strlen($matches[0][0]);
                 }
             }
+            $cache[$cacheKey] = $codesToHide;
         }
 
         return $codesToHide;
