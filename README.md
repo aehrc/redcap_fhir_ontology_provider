@@ -19,6 +19,25 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### Version 0.5.2 changes
+
+This is a follow up release to 0.5.1. There are no new features.
+
+- ***Credential fields now masked in the configuration page***
+Both the Basic Auth password and the OAuth2 client secret now render masked in the module configuration page,
+instead of being displayed in plain text.
+- ***The stored credential does NOT migrate***
+The Basic Auth password must be re-entered immediately after upgrading, or FHIR lookups will start failing. This
+failure is silent: the lookup fails and the dropdown comes back empty, with no error shown to the user. This is why
+the password must be re-entered immediately after upgrading.
+- ***Masking is display only - it does NOT encrypt the value at rest***
+This change only masks the value shown in the configuration page. It does not encrypt the value in storage. The
+External Modules documentation states that values saved with a password setting are still stored as plain text.
+The credential remains readable in the `redcap_external_module_settings` table and in database backups.
+
+**Deploying:** place this version in a new directory `modules/fhir-ontology-provider_v0.5.2` alongside the existing
+version, and only enable it once version 0.5.1 has been proven in production.
+
 ### Version 0.5.1 changes
 
 This is a security and performance release. There are no new features.
@@ -52,30 +71,11 @@ Responses that are not valid JSON, expansions missing `code`, `system` or `displ
 are now handled explicitly instead of producing PHP warnings.
 
 **Note:** masking of the stored Basic Auth password and OAuth2 client secret is *not* included in this release. It
-ships separately as version 0.5.2, described below, so that this release can be proven in production first.
+ships separately as version 0.5.2, described above, so that this release can be proven in production first.
 
 **Deploying:** place this version in a new directory `modules/fhir-ontology-provider_v0.5.1` alongside the existing
 version rather than overwriting it. Enable the new version from the External Modules page. To roll back, switch the
 enabled version back to the previous one.
-
-### Version 0.5.2 changes
-
-This is a follow up release to 0.5.1. There are no new features.
-
-- ***Credential fields now masked in the configuration page***
-Both the Basic Auth password and the OAuth2 client secret now render masked in the module configuration page,
-instead of being displayed in plain text.
-- ***The stored credential does NOT migrate***
-The Basic Auth password must be re-entered immediately after upgrading, or FHIR lookups will start failing. This
-failure is silent: if the `Return 'No Results Found'` option is enabled it will simply report no results while
-the real cause is a 401 from the FHIR server.
-- ***Masking is display only - it does NOT encrypt the value at rest***
-This change only masks the value shown in the configuration page. It does not encrypt the value in storage. The
-External Modules documentation states that values saved with a password setting are still stored as plain text.
-The credential remains readable in the `redcap_external_module_settings` table and in database backups.
-
-**Deploying:** place this version in a new directory `modules/fhir-ontology-provider_v0.5.2` alongside the existing
-version, and only enable it once version 0.5.1 has been proven in production.
 
 ### Version 0.5 changes 
 

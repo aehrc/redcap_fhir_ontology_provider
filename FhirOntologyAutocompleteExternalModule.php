@@ -345,8 +345,13 @@ EOD;
             }
             $annotations = null;
             if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
-                    && isset($Proj->metadata[$field]['field_annotation'])) {
-                $annotations = $Proj->metadata[$field]['field_annotation'];
+                    && isset($Proj->metadata[$field])) {
+                // field_annotation is NULL for un-annotated fields, which is the common
+                // case - take the in-memory path on field presence, not on the annotation
+                // existing, or every un-annotated field falls back to a full dictionary load
+                $annotations = isset($Proj->metadata[$field]['field_annotation'])
+                    ? $Proj->metadata[$field]['field_annotation']
+                    : null;
             }
             else if ($project_id !== null){
                 $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
