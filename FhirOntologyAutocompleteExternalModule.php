@@ -463,8 +463,12 @@ EOD;
               if (data.expansion && data.expansion.total) $('#fhirValueSet_expansion_count').text(data.expansion.total);
               if (data.expansion && data.expansion.contains){
                 for (v of data.expansion.contains){
-                  r = "<tr><td class='data'>" + v.display + "</td><td class='data'>" + v.code + "</td><td class='data'>"+v.system+"</td></tr>"
-                  $('#fhirValueSet_contains').append(r);
+                  // build via DOM so server supplied text can never be parsed as markup
+                  var row = $('<tr>');
+                  row.append($('<td>').addClass('data').text(v.display));
+                  row.append($('<td>').addClass('data').text(v.code));
+                  row.append($('<td>').addClass('data').text(v.system));
+                  $('#fhirValueSet_contains').append(row);
                 }
               }
             },
@@ -483,13 +487,17 @@ EOD;
               catch (e){
                 // not json
               }
-              var errorMessage = "Failed to load Valueset - Status : " + xhr.status + "<br>\\n"
+              // build via DOM - diagnostics echoes back text the user supplied as the
+              // valueset url, so it must never be concatenated into markup
+              var errorCell = $('<td>').addClass('data').attr('colspan', '3');
+              errorCell.append(document.createTextNode("Failed to load Valueset - Status : " + xhr.status));
               if (errorObject && errorObject.issue){
                 for (issue of errorObject.issue){
-                  errorMessage += issue.severity + " : " + issue.diagnostics + "<br>\\n";
+                  errorCell.append($('<br>'));
+                  errorCell.append(document.createTextNode(issue.severity + " : " + issue.diagnostics));
                 }
               }
-              $('#fhirValueSet_contains').append("<tr class='error'><td class='data' colspan='3'>" + errorMessage + "</td></tr>");
+              $('#fhirValueSet_contains').append($('<tr>').addClass('error').append(errorCell));
             }
           } );
           $('#fhir_valueset_dialog').dialog('open');
