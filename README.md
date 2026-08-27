@@ -19,6 +19,45 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### Version 0.5.1 changes
+
+This is a security and performance release. There are no new features.
+
+- ***Terminology lookup web service now requires authentication***
+The `FindValueSetService` page was previously declared as a no-auth page, meaning it could be called without logging
+in to REDCap. Because the FHIR server is typically on an internal network while REDCap is internet facing, this
+allowed anonymous users to query the terminology server through REDCap and read its responses. The no-auth
+declaration has been removed; the online designer is unaffected because it never used the no-auth route.
+- ***Requests to the FHIR server now time out***
+A new `FHIR request timeout (seconds)` setting (default 10) bounds how long REDCap waits for the terminology server.
+Previously there was no limit, so a slow or restarting FHIR server could hold web server processes open until the
+system default expired and make all of REDCap unresponsive.
+- ***Circuit breaker for terminology server failures***
+After 3 consecutive failed requests the module stops calling the FHIR server for 60 seconds and returns no results
+immediately, then allows a single trial request through to check for recovery. If ontology autocomplete appears dead
+for up to a minute after a terminology server restart, this is why. It protects REDCap as a whole from being taken
+down by terminology server downtime.
+- ***Fixed a data dictionary reload on every keystroke***
+`@HIDECHOICE` support was reloading the project data dictionary on every autocomplete keystroke, for every project,
+whether or not the field used `@HIDECHOICE`. The lookup is now cached per request and uses the already loaded project
+metadata where available.
+- ***Fixed OAuth2 token expiry calculation***
+Token lifetimes were treated as milliseconds rather than seconds, so an expired token could be reused for weeks,
+causing lookups to fail silently. This did not affect Basic Auth or unauthenticated servers, but would have affected
+any site using OAuth2 client credentials.
+- ***Fixed cross site scripting in the ValueSet details dialog***
+The Show Details dialog inserted values from the FHIR server into the page as HTML. Values are now inserted as text.
+- ***More robust error handling***
+Responses that are not valid JSON, expansions missing `code`, `system` or `display`, and unknown web service actions
+are now handled explicitly instead of producing PHP warnings.
+
+**Note:** masking of the stored Basic Auth password and OAuth2 client secret is *not* included in this release. It is
+planned for 0.5.2 as it requires the credential to be re-entered after upgrading.
+
+**Deploying:** place this version in a new directory `modules/fhir-ontology-provider_v0.5.1` alongside the existing
+version rather than overwriting it. Enable the new version from the External Modules page. To roll back, switch the
+enabled version back to the previous one.
+
 ### Version 0.5 changes 
 
 - ***Change storage format***
@@ -56,6 +95,7 @@ The following site wide settings are available:
      * `https://tx.ontoserver.csiro.au/fhir` an Australian server with the Australian edition of SNOMED CT as its default. The server also contains LOINC and other code systems.
      * `https://snowstorm-fhir.snomedtools.org/fhir` is a test server hosted by snomed, it does not include LOINC or non-snomed code systems and valuesets. This means when selecting a valueset to use only the `SnomedCT Refset` and `SnomedCT isa implicit valueset` selection options will find a valueset.
      * `https://fhir.loinc.org` is a test server hosted by LOINC (see https://loinc.org/fhir/). This server uses basic authentication and only contains LOINC, not SNOMED CT or other valuesets.
+  * `FHIR request timeout (seconds)` - the maximum time to wait for a response from the FHIR server before giving up. Defaults to 10 seconds if left blank. Without a limit, a slow or unavailable terminology server holds REDCap web server processes open, which can make the whole of REDCap unresponsive - not just this module. Increase it if large ECL expansions legitimately take longer; decrease it to fail faster.
   * `SNOMEDCT Support` - when this checkbox is checked the search by 'SNOMED CT Refset' and 'SNOMED CT isa implicit valueset' will be made available.
   * `LOINC Support` - this dropdown controls the use of search by 'LOINC implicit answer set'. It options are
     *  `LOINC not available` - The search by 'LOINC implicit answer set' will not be available.
