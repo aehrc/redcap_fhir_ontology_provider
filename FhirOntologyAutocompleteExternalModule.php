@@ -33,6 +33,10 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 {
     /** Fallback timeout (seconds) used when the 'fhir_timeout' setting is blank or invalid. */
     const DEFAULT_TIMEOUT = 10;
+    /** Consecutive failures required before the circuit breaker opens. */
+    const BREAKER_FAILURE_THRESHOLD = 3;
+    /** How long (seconds) the breaker stays open before allowing a trial request. */
+    const BREAKER_OPEN_SECONDS = 60;
 
     public function __construct()
     {
@@ -258,7 +262,20 @@ EOD;
             ));
         // Call the URL
 
-        $json = $this->httpGet($url, $headers);
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast rather than tying up a web
+            // server process on a request we already expect to time out.
+            $json = false;
+        }
+        else {
+            $json = $this->httpGet($url, $headers);
+            if ($json === false) {
+                $this->recordFhirFailure();
+            }
+            else {
+                $this->recordFhirSuccess();
+            }
+        }
         // Parse the JSON into an array
         $list = json_decode($json, true);
         $expansion = $list['expansion'];
@@ -746,6 +763,10 @@ EOD;
         if ($authHeader !== false) {
             $headers[] = $authHeader;
         }
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast.
+            return [];
+        }
         if ('GET' === $method) {
             $fullUrl = $this->getFhirServerUri() . $url . '?' . http_build_query($params);
             $result_json = $this->httpGet($fullUrl, $headers);
@@ -754,8 +775,10 @@ EOD;
             $result_json = $this->httpPost($fullUrl, $postData, $contentType, $headers);
         }
         if ($result_json === false) {
+            $this->recordFhirFailure();
             return [];
         }
+        $this->recordFhirSuccess();
         return $processFunction(json_decode($result_json, true));
     }
 
@@ -768,7 +791,18 @@ EOD;
         if ($authHeader !== false) {
             $headers[] = $authHeader;
         }
-        return $this->httpGet($fullUrl, $headers);
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast. false tells the service
+            // layer to emit a 502 rather than a misleading empty success.
+            return false;
+        }
+        $response = $this->httpGet($fullUrl, $headers);
+        if ($response === false) {
+            $this->recordFhirFailure();
+            return false;
+        }
+        $this->recordFhirSuccess();
+        return $response;
     }
 
 
@@ -785,6 +819,36 @@ EOD;
         }
         return self::DEFAULT_TIMEOUT;
     }
+
+    /**
+     * True while the breaker is open, i.e. the FHIR server has failed repeatedly and
+     * we should fail fast instead of dialing out again. Once the open window elapses
+     * a single trial request is allowed through to see if the server has recovered.
+     */
+    public function isCircuitOpen()
+    {
+        $openUntil = $this->getSystemSetting('fhir_breaker_open_until');
+        return $openUntil && time() < (int)$openUntil;
+    }
+
+    public function recordFhirFailure()
+    {
+        $failures = (int)$this->getSystemSetting('fhir_breaker_failures') + 1;
+        $this->setSystemSetting('fhir_breaker_failures', $failures);
+        if ($failures >= self::BREAKER_FAILURE_THRESHOLD) {
+            $this->setSystemSetting('fhir_breaker_open_until', time() + self::BREAKER_OPEN_SECONDS);
+        }
+    }
+
+    public function recordFhirSuccess()
+    {
+        // only write when there is state to clear, so a healthy server costs no writes
+        if ($this->getSystemSetting('fhir_breaker_failures')) {
+            $this->setSystemSetting('fhir_breaker_failures', 0);
+            $this->setSystemSetting('fhir_breaker_open_until', 0);
+        }
+    }
+
 
     public function httpGet($fullUrl, $headers)
     {
