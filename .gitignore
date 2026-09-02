@@ -4,3 +4,5 @@
 .settings
 vendor
 .superpowers
+.env
+CLAUDE.md
