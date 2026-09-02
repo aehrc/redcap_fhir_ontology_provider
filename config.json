@@ -2,18 +2,13 @@
   "name": "Fhir Ontology Autocomplete Module",
   "namespace": "AEHRC\\FhirOntologyAutocompleteExternalModule",
   "description": "This module provides support for referencing an external Fhir based ontology server to lookup values.",
-  "framework-version": 1,
+  "framework-version": 16,
   "authors": [
     {
       "name": "David Conlan",
       "email": "david.conlan@csiro.au",
       "institution": "Commonwealth Science & Industrial Research Organisation"
     }
-  ],
-  "permissions": [
-    "redcap_every_page_before_render",
-    "redcap_data_entry_form",
-    "redcap_survey_page"
   ],
   "system-settings": [
     {
@@ -168,7 +163,7 @@
     "FindValueSetService"
   ],
   "compatibility": {
-    "php-version-min": "5.4.0",
+    "php-version-min": "8.0.0",
     "redcap-version-min": "8.8.1"
   }
 }
