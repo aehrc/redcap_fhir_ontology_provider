@@ -76,7 +76,7 @@ Once enabled the online designer will have a new ontology source availble. If se
 
 -Search For valuset using: (dropdown with the options)
  - ValueSet Name - searching using the name of the valueset
- - By CodeSystem - searching using the name of the codesystem
+ - By CodeSystem - searching using the title of the codesystem
  - SNOMED CT Refset - search for a SNOMED CT Refset
  - SNOMED CT isa implicit valueset - search for a SNOMED CT concept and use the valueset composed of it and its children
  - LOINC implicit answer set - search for a LOINC implicit answer set
