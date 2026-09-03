@@ -1,0 +1,66 @@
+<?php
+
+/**
+ * Minimal signature stubs for the REDCap External Modules framework, so that Psalm's
+ * taint analysis has enough shape to work with. This deliberately contains only public
+ * method/function SIGNATURES (no implementation) for the framework surface this module
+ * actually calls - it is not, and must not become, a copy of REDCap core source, which
+ * is proprietary. Signatures are sourced from REDCap's own published EM Framework docs.
+ */
+
+namespace ExternalModules {
+    abstract class AbstractExternalModule
+    {
+        public function __construct() {}
+        public function getSystemSetting($key) {}
+        public function setSystemSetting($key, $value) {}
+        public function getProjectSetting($key, $project_id = null) {}
+        public function setProjectSetting($key, $value, $project_id = null) {}
+
+        /** @psalm-taint-sink sql $sql */
+        public function query($sql, $params) {}
+
+        public function getUrl($path, $noAuth = false, $useApiEndpoint = false) {}
+    }
+
+    class ExternalModules {}
+}
+
+namespace {
+
+    class REDCap
+    {
+        /** @psalm-taint-escape html */
+        public static function escapeHtml($value) {}
+
+        public static function getDataDictionary($project_id, $format = 'array', $numeric = false, $fields = null, $forms = null) {}
+    }
+
+    interface OntologyProvider
+    {
+        public function searchOntology($category, $search_term, $result_limit);
+        public function getServicePrefix();
+        public function getLabelForValue($category, $value);
+        public function getOnlineDesignerSection();
+    }
+
+    class OntologyManager
+    {
+        public static function getOntologyManager() {}
+        public function addProvider($provider) {}
+    }
+
+    class Project
+    {
+        public $project_id;
+        public $metadata;
+    }
+
+    /** @psalm-taint-sink ssrf $url */
+    function http_get($url, $timeout = null, $basic_auth_user_pass = '', $headers = [], $user_agent = null) {}
+
+    /** @psalm-taint-sink ssrf $url */
+    function http_post($url, $params = [], $timeout = null, $content_type = 'application/x-www-form-urlencoded', $basic_auth_user_pass = '', $headers = [], &$info = null) {}
+
+    function sameHostUrl($url) {}
+}
