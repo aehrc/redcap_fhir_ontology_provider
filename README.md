@@ -26,13 +26,13 @@ In version 0.5 of this module the way the selected code is stored has been chang
 format '${code}|${display}|${system}' as returned by the fhir server. If the display was large, this could result in
 a code which was more than 100 characters which would make the display lookup fail. Instead just '${code}|${system}'
 will be stored.
-- ***Baic Authentication support***
+- ***Basic Authentication support***
 The group behind LOINC have made available a FHIR terminology server. More information can be found at https://loinc.org/fhir/
 . This server uses basic authentication and can be used if LOINC answer lists are required but not SNOMEDCT or other
 code systems.
 - ***Ability to manually edit the valueset url in designer***
 In older versions of the module, the valueset url to use had to be found and selected using one of the available search
-options. This input field may now be editted to allow the manual entry of the valueset url. This makes it easier to
+options. This input field may now be edited to allow the manual entry of the valueset url. This makes it easier to
 standardise on specific valuesets and allows the entry of an implicit snomed ECL valueset.
 - ***Search by CodeSystem changed from name to title search***
 A CodeSystem has a name and title, with the title designated as the human friendly name. This change should show more
@@ -50,7 +50,7 @@ The module code needs to be placed in a directory `modules/fhir-ontology-provide
 
 The module should then show up as an external module.
 
-The following site wide setings are available:
+The following site wide settings are available:
   * `FHIR API URL` - this is the url for the fhir server. Two possible fhir end points are listed, but people may want to run their own server to have better control of the available ValueSets. 
      The two suggested fhir end points are:
      * `https://tx.ontoserver.csiro.au/fhir` an Australian server with the Australian edition of SNOMED CT as its default. The server also contains LOINC and other code systems.
@@ -60,7 +60,7 @@ The following site wide setings are available:
   * `LOINC Support` - this dropdown controls the use of search by 'LOINC implicit answer set'. It options are
     *  `LOINC not available` - The search by 'LOINC implicit answer set' will not be available.
     *  `Ontoserver LL parent concept` - Ontoserver stores LOINC with an additional concept 'LL' which is the parent to all codes beginning with 'LL', this allows direct searching for answer lists.
-    *  `Filter LLxxxxx concepts from expand` - The LOINC demonstration server doesn't have the 'LL' parent like ontoserver, in this case a search of all of loinc is used and only codes starting with LL are returned. Unfortunetly this mechanism does not work on ontoserver, as its standard loinc search does not return codes starting with LL
+    *  `Filter LLxxxxx concepts from expand` - The LOINC demonstration server doesn't have the 'LL' parent like ontoserver, in this case a search of all of loinc is used and only codes starting with LL are returned. Unfortunately this mechanism does not work on ontoserver, as its standard loinc search does not return codes starting with LL
   * `Add value tooltip` - The codes returned by lookup are returned in the format `'code|system'` this means the value displayed when an entry is selected is normally longer then the 12 or so characters normally used to display the code. This option will add a `title` attribute to the value display to show the value as a tooltip when the mouse is used to hover over the value. This will only show up in the data entry and survey forms, not testing in the online designed.
   * `Return 'No Results Found'` - This check box is used to indicate that a special value should be returned if no values are returned by a search. The purpose of this is to allow the option to be selected and then have an additional field get activated via branching logic to receive additional data.
      * `No Results Label` - The display value for the special value returned if the `'return no results found'` option is enabled. The Label cannot contain html markup.
@@ -75,7 +75,7 @@ The following site wide setings are available:
 
 ### Online designer
 
-Once enabled the online designer will have a new ontology source availble. If selected the following UI elements will be made available:
+Once enabled the online designer will have a new ontology source available. If selected the following UI elements will be made available:
 
 -Search For valuset using: (dropdown with the options)
  - ValueSet Name - searching using the name of the valueset
