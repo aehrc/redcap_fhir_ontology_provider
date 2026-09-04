@@ -28,16 +28,11 @@ namespace AEHRC\FhirOntologyAutocompleteExternalModule;
 use ExternalModules\AbstractExternalModule;
 use ExternalModules\ExternalModules;
 
+require_once __DIR__ . '/FhirRequestPolicy.php';
+
 
 class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule implements \OntologyProvider
 {
-    /** Fallback timeout (seconds) used when the 'fhir_timeout' setting is blank or invalid. */
-    const DEFAULT_TIMEOUT = 10;
-    /** Consecutive failures required before the circuit breaker opens. */
-    const BREAKER_FAILURE_THRESHOLD = 3;
-    /** How long (seconds) the breaker stays open before allowing a trial request. */
-    const BREAKER_OPEN_SECONDS = 60;
-
     public function __construct()
     {
         parent::__construct();
@@ -859,42 +854,55 @@ EOD;
      */
     public function getFhirTimeout()
     {
-        $timeout = $this->getSystemSetting('fhir_timeout');
-        if (is_numeric($timeout) && (int)$timeout > 0) {
-            return (int)$timeout;
-        }
-        return self::DEFAULT_TIMEOUT;
+        return FhirRequestPolicy::resolveTimeout($this->getSystemSetting('fhir_timeout'));
     }
 
     /**
      * True while the breaker is open, i.e. the FHIR server has failed repeatedly and
-     * we should fail fast instead of dialing out again. Once the open window elapses,
-     * the single caller that observes this re-arms the window for BREAKER_OPEN_SECONDS
-     * before returning false, so exactly one concurrent request is allowed through as
-     * a trial while every other concurrent caller keeps failing fast.
+     * we should fail fast instead of dialing out again.
+     *
+     * Once the open window elapses a caller that observes it re-arms the window before
+     * returning false, so that callers arriving behind it keep failing fast while it
+     * probes the server.
+     *
+     * This is best-effort, not a guarantee. The read and the write are separate
+     * round trips to the settings table with no lock between them, so two requests
+     * arriving together at the window boundary can both observe the window as expired
+     * and both probe. In practice that means normally one probe per window and
+     * occasionally a few - which is sufficient, because the breaker exists to prevent
+     * a stampede of every worker dialing a dead server, not to serialise probes.
      */
     public function isCircuitOpen()
     {
-        $openUntil = (int)$this->getSystemSetting('fhir_breaker_open_until');
-        if (!$openUntil) {
-            return false;
-        }
-        if (time() < $openUntil) {
+        $openUntil = $this->getSystemSetting('fhir_breaker_open_until');
+        $now = time();
+        if (FhirRequestPolicy::isOpen($openUntil, $now)) {
             return true;
         }
-        // Window elapsed. Re-arm before returning so concurrent callers keep failing
-        // fast while this one request probes the server. recordFhirSuccess() clears
-        // both keys when the probe succeeds, so the re-arm costs nothing on recovery.
-        $this->setSystemSetting('fhir_breaker_open_until', time() + self::BREAKER_OPEN_SECONDS);
+        if (FhirRequestPolicy::needsRearm($openUntil, $now)) {
+            // Window elapsed. Re-arm before returning so callers behind this one keep
+            // failing fast while it probes. recordFhirSuccess() clears both keys when
+            // the probe succeeds, so the re-arm costs nothing on recovery.
+            $this->setSystemSetting('fhir_breaker_open_until', $now + FhirRequestPolicy::BREAKER_OPEN_SECONDS);
+        }
         return false;
     }
 
+    /**
+     * Counts a failure and opens the breaker once enough have accumulated.
+     *
+     * The increment is a read followed by a write with no lock between them, so
+     * simultaneous failures can overwrite one another and the count can lag the
+     * true number of failures. The effect is that the breaker may open after
+     * slightly more than BREAKER_FAILURE_THRESHOLD failures rather than exactly
+     * that many. It self-corrects as further failures arrive.
+     */
     public function recordFhirFailure()
     {
-        $failures = (int)$this->getSystemSetting('fhir_breaker_failures') + 1;
+        $failures = FhirRequestPolicy::nextFailureCount($this->getSystemSetting('fhir_breaker_failures'));
         $this->setSystemSetting('fhir_breaker_failures', $failures);
-        if ($failures >= self::BREAKER_FAILURE_THRESHOLD) {
-            $this->setSystemSetting('fhir_breaker_open_until', time() + self::BREAKER_OPEN_SECONDS);
+        if (FhirRequestPolicy::opensBreaker($failures)) {
+            $this->setSystemSetting('fhir_breaker_open_until', time() + FhirRequestPolicy::BREAKER_OPEN_SECONDS);
         }
     }
 
@@ -905,7 +913,7 @@ EOD;
      */
     public function recordFhirFailureIfSlow($elapsedSeconds)
     {
-        if ($elapsedSeconds >= (0.8 * $this->getFhirTimeout())) {
+        if (FhirRequestPolicy::countsAsFailure($elapsedSeconds, $this->getFhirTimeout())) {
             $this->recordFhirFailure();
         }
     }
