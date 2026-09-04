@@ -85,12 +85,17 @@ class FhirRequestPolicy
 
     /**
      * True when $url addresses the same origin as $baseUri, sits at or below its
-     * path, and contains no dot segments (literal . or .., or percent-encoded %2e/%2f).
-     * Every outbound request is checked against the configured FHIR server so
-     * that a malformed or hostile setting cannot turn the module into a proxy for
-     * arbitrary hosts on the REDCap server's network. Dot segments are rejected in
-     * both literal and percent-encoded form because the module constructs every
-     * request itself from fixed components and never requires traversal.
+     * path, and contains no path-traversal attempts. Every outbound request is
+     * checked against the configured FHIR server so that a malformed or hostile
+     * setting cannot turn the module into a proxy for arbitrary hosts on the
+     * REDCap server's network.
+     *
+     * The path is inspected after percent-decoding (all escapes, iteratively up
+     * to 5 times to catch double-encoding), normalizing backslashes to forward
+     * slashes, and stripping path parameters (;-delimited suffixes). Segments
+     * consisting entirely of dots (., .., ..., etc.) are rejected, as are any
+     * that remain after these transformations. Query strings are not inspected
+     * — only the path component is constrained.
      */
     public static function isWithinBase($url, $baseUri)
     {
@@ -148,28 +153,38 @@ class FhirRequestPolicy
     }
 
     /**
-     * Returns true if $path contains any dot segment (. or ..) either literal or
-     * percent-encoded (%2e, %2E, %2f, %2F). Decodes percent sequences up to 5
-     * times to catch double-encoding without unbounded iteration.
+     * Returns true if $path contains any dot segment (. or .. or longer all-dot
+     * sequences) either literal, percent-encoded, or hidden behind path parameters
+     * and backslash separators. The check decodes all percent escapes iteratively
+     * (up to 5 times to prevent loops), normalizes backslashes to forward slashes,
+     * and strips path parameters (;-delimited) before checking segment names.
      */
     private static function containsDotSegment($path)
     {
-        // Repeatedly decode %25, %2e, %2f (case-insensitive) to collapse encoded
-        // and double-encoded forms, up to 5 iterations to prevent infinite loops.
+        // Iteratively decode all percent escapes to handle multi-encoded forms,
+        // up to 5 iterations to prevent infinite loops.
         for ($i = 0; $i < 5; $i++) {
             $before = $path;
-            $path = preg_replace('/%25/i', '%', $path);
-            $path = preg_replace('/%2[eE]/i', '.', $path);
-            $path = preg_replace('/%2[fF]/i', '/', $path);
+            $path = rawurldecode($path);
             if ($path === $before) {
-                break; // No more replacements possible.
+                break; // No more decoding possible.
             }
         }
+
+        // Normalize backslashes to forward slashes so they are treated as path separators.
+        $path = str_replace('\\', '/', $path);
 
         // Split by / and check each segment.
         $segments = explode('/', $path);
         foreach ($segments as $segment) {
-            if ('.' === $segment || '..' === $segment) {
+            // Strip path parameters (everything after the first ;).
+            $paramPos = strpos($segment, ';');
+            if (false !== $paramPos) {
+                $segment = substr($segment, 0, $paramPos);
+            }
+
+            // Reject segments that consist entirely of dots (., .., ..., etc).
+            if ('' !== $segment && strlen($segment) === substr_count($segment, '.')) {
                 return true;
             }
         }

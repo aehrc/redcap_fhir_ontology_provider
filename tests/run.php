@@ -137,6 +137,24 @@ assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/./metad
 assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/a.b/c', $base),
     'isWithinBase: dot within segment name allowed');
 
+// --- path evasion techniques (round 2) ------------------------------------
+
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/%25%32%65%25%32%65/x', $base),
+    'isWithinBase: double-encoded dots %25%32%65 rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/..;/admin', $base),
+    'isWithinBase: path parameter stripping attack rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/....//admin', $base),
+    'isWithinBase: four-dot segment rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/%2e%2e%5cadmin', $base),
+    'isWithinBase: backslash as separator rejected');
+
+// --- query strings must not block legitimate queries ----------------------
+
+assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/CodeSystem/$lookup?code=1..5', $base),
+    'isWithinBase: dots in query string allowed');
+assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/x?q=../../etc', $base),
+    'isWithinBase: traversal in query string allowed');
+
 // --- summary --------------------------------------------------------------
 
 $passed = $GLOBALS['tests_passed'];
