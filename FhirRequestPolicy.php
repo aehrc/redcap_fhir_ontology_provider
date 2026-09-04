@@ -86,10 +86,10 @@ class FhirRequestPolicy
     /**
      * True when $url addresses the same origin as $baseUri, sits at or below its
      * path, carries no embedded credentials other than a copy of the base's own,
-     * and contains no dot-segment traversal. Every outbound request is checked
-     * against the configured FHIR server so that a malformed or hostile setting
-     * cannot turn the module into a proxy for arbitrary hosts on the REDCap
-     * server's network.
+     * and contains no dot-segment traversal. Every URL this module constructs
+     * before handing it to the HTTP helper is checked against this, so a
+     * malformed or hostile setting cannot make the module request a path or
+     * host outside the configured FHIR server *at the point this check runs*.
      *
      * Specifically: scheme, host and port must match; the path must be the base
      * or a descendant; and dot-segment traversal (., .., etc.) is rejected in
@@ -103,6 +103,15 @@ class FhirRequestPolicy
      * reject per the Unicode spec (e.g. overlong UTF-8 sequences) are not blocked
      * — the module constructs every outbound path from fixed components so such
      * sequences never appear in practice.
+     *
+     * This is NOT a general SSRF guard. It performs no DNS resolution, so a
+     * configured host that resolves (now or later) to a link-local or private
+     * address passes unchanged. It also does not see what happens after the
+     * request leaves this check: REDCap core's http_get()/http_post() follow
+     * HTTP redirects, so a terminology server that replies
+     * 302 -> http://169.254.169.254/latest/meta-data/ is followed there
+     * regardless of what this method decided. Redirect-following and DNS
+     * rebinding are both outside what this check covers.
      */
     public static function isWithinBase($url, $baseUri)
     {
@@ -136,6 +145,13 @@ class FhirRequestPolicy
             if (strtolower($u[$part]) !== strtolower($b[$part])) {
                 return false;
             }
+        }
+        // Scheme is already confirmed equal above, but that alone does not make it
+        // a valid HTTP(S) URL - without this, isWithinBase($baseOverride, $baseOverride)
+        // (used by validateSettings() as a well-formedness check) would accept
+        // schemes such as gopher:// or ftp:// as well-formed.
+        if (!in_array(strtolower($u['scheme']), array('http', 'https'))) {
+            return false;
         }
         if (self::port($u) !== self::port($b)) {
             return false;

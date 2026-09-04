@@ -180,8 +180,10 @@ EOD;
                 // boundary check the way the other call sites use $baseOverride.
                 $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers, $authEndpoint);
                 if ($response === false) {
-                    $r = isset($http_response_header) ? implode("", $http_response_header) : '';
-                    $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' response = false, r='" . $r . "'\n";
+                    // $http_response_header is populated inside httpPost()'s own scope, not
+                    // here, so it is never available at this call site - do not promise a
+                    // response body this diagnostic can never show.
+                    $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - request failed or was refused\n";
                 } else {
                     // a false or unparseable response decodes to null, and array_key_exists(null)
                     // is a fatal TypeError on PHP 8
@@ -797,8 +799,13 @@ EOD;
             return ['error' => "Unknown search type $type"];
         }
         if ($this->isCircuitOpen()) {
-            // Server has failed repeatedly - fail fast.
-            return [];
+            // Server has failed repeatedly - fail fast. Use the same ['error' => ...]
+            // shape as the "unknown search type" case above, rather than an empty
+            // array, so FindValueSetService.php can tell a genuine failure apart
+            // from "no matches" instead of returning a misleadingly successful
+            // empty result (see getValueSetInfo(), which does the equivalent with
+            // a false return).
+            return ['error' => 'The terminology server is not responding. Please try again shortly.'];
         }
         $headers = ['User-Agent: Redcap'];
         $authHeader = $this->getAuthHeader();
@@ -815,7 +822,7 @@ EOD;
         }
         if ($result_json === false) {
             $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
-            return [];
+            return ['error' => 'The terminology server is not responding. Please try again shortly.'];
         }
         $this->recordFhirSuccess();
         return $processFunction(json_decode($result_json, true));
@@ -942,6 +949,39 @@ EOD;
     }
 
 
+    /**
+     * Returns $url with any embedded userinfo (user:pass@) stripped, for safe
+     * inclusion in log messages. Falls back to the original value if it cannot
+     * be parsed as a URL.
+     */
+    private function urlForLogging($url)
+    {
+        if (!is_string($url) || '' === $url) {
+            return (string)$url;
+        }
+        $parts = parse_url($url);
+        if (!is_array($parts) || (!isset($parts['user']) && !isset($parts['pass']))) {
+            return $url;
+        }
+        $result = '';
+        if (isset($parts['scheme'])) {
+            $result .= $parts['scheme'] . '://';
+        }
+        if (isset($parts['host'])) {
+            $result .= $parts['host'];
+        }
+        if (isset($parts['port'])) {
+            $result .= ':' . $parts['port'];
+        }
+        if (isset($parts['path'])) {
+            $result .= $parts['path'];
+        }
+        if (isset($parts['query'])) {
+            $result .= '?' . $parts['query'];
+        }
+        return $result;
+    }
+
     public function httpGet($fullUrl, $headers, $baseOverride = null)
     {
         // getFhirServerUri() strips any trailing slash from the configured setting.
@@ -954,6 +994,8 @@ EOD;
         // trivially true.
         $base = (null === $baseOverride) ? $this->getFhirServerUri() : $baseOverride;
         if (!FhirRequestPolicy::isWithinBase($fullUrl, $base)) {
+            error_log('FhirOntologyAutocompleteExternalModule: httpGet refused URL outside configured FHIR server - url='
+                . $this->urlForLogging($fullUrl) . ' base=' . $this->urlForLogging($base));
             return false;
         }
         $timeout = $this->getFhirTimeout();
@@ -1003,12 +1045,16 @@ EOD;
         // trivially true.
         if (null !== $baseOverride) {
             $allowed = FhirRequestPolicy::isWithinBase($fullUrl, $baseOverride);
+            $baseForLog = $baseOverride;
         } else {
             $tokenEndpoint = $this->getSystemSetting('cc_token_endpoint');
+            $baseForLog = $this->getFhirServerUri();
             $allowed = ($tokenEndpoint && $fullUrl === $tokenEndpoint)
-                || FhirRequestPolicy::isWithinBase($fullUrl, $this->getFhirServerUri());
+                || FhirRequestPolicy::isWithinBase($fullUrl, $baseForLog);
         }
         if (!$allowed) {
+            error_log('FhirOntologyAutocompleteExternalModule: httpPost refused URL outside configured FHIR server - url='
+                . $this->urlForLogging($fullUrl) . ' base=' . $this->urlForLogging($baseForLog));
             return false;
         }
         $timeout = $this->getFhirTimeout();

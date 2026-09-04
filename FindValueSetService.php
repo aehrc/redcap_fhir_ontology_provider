@@ -77,6 +77,14 @@ if (!isset($params['action'])){
 
 if ('find' === $action){
     $result = $module->findValueSet($type, $query);
+    if (is_array($result) && array_key_exists('error', $result)) {
+        // Breaker open, transport failure, or (in practice unreachable, since
+        // $type is validated above) an unknown search type. Signal it with a
+        // non-2xx status, the same way getValueSetInfo()'s false return becomes
+        // a 502 below, instead of a 200 the autocomplete widget would read as a
+        // genuine "no matches".
+        http_response_code(502);
+    }
     echo json_encode($result, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
 }
 else {

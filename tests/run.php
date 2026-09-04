@@ -1,7 +1,12 @@
 <?php
+if (PHP_SAPI !== 'cli') { exit; }
 /**
  * Plain-PHP test runner. No composer, no PHPUnit - the module must stay
  * installable by copying a directory, so tests carry no dependencies.
+ *
+ * This file lives inside the module directory, which sits under the REDCap
+ * web root, so it must refuse to execute as an unauthenticated web request -
+ * hence the SAPI guard above, as the first executable statement.
  *
  * Usage: php tests/run.php
  */
@@ -164,6 +169,16 @@ assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/CodeSyst
     'isWithinBase: dots in query string allowed');
 assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/x?q=../../etc', $base),
     'isWithinBase: traversal in query string allowed');
+
+// --- scheme must be http/https (validateSettings()'s self-check path uses ----
+// --- isWithinBase($x, $x), where scheme equality alone lets anything through) --
+
+assertFalse(FhirRequestPolicy::isWithinBase('gopher://internal:70/', 'gopher://internal:70/'),
+    'isWithinBase: gopher scheme rejected even when url equals base');
+assertFalse(FhirRequestPolicy::isWithinBase('ftp://internal/fhir', 'ftp://internal/fhir'),
+    'isWithinBase: ftp scheme rejected even when url equals base');
+assertTrue(FhirRequestPolicy::isWithinBase('http://ts.example.org/fhir', 'http://ts.example.org/fhir'),
+    'isWithinBase: http scheme still allowed when url equals base');
 
 // --- summary --------------------------------------------------------------
 
