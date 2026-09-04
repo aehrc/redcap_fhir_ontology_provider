@@ -849,10 +849,16 @@ EOD;
      * the file_get_contents fallback used when curl is unavailable, where the
      * stream context 'timeout' option is a true end-to-end limit. Closing this gap
      * on the curl path requires the module to issue its own curl requests with an
-     * explicit CURLOPT_TIMEOUT, which is planned follow-up work. Until then, the
-     * circuit breaker (see isCircuitOpen()/recordFhirFailureIfSlow()) is what limits
-     * the damage from a stalling server, since a hung call trivially exceeds 80% of
-     * this timeout and counts as a failure.
+     * explicit CURLOPT_TIMEOUT, which is planned follow-up work. The circuit breaker
+     * (see isCircuitOpen()/recordFhirFailureIfSlow()) helps for the common case where
+     * a slow or erroring server eventually returns - a slow response, a connection
+     * reset, a timeout enforced at the OS or proxy layer - since those calls do
+     * return and get counted. It does not help against a true indefinite hang:
+     * recordFhirFailureIfSlow() only runs after httpGet()/httpPost() returns, and a
+     * call that never returns is killed by PHP's own execution time limit first, so
+     * it is never recorded and never trips the breaker. Once the breaker does open,
+     * though, it stops all further calls outright, which is real protection against
+     * repeat failures of either kind.
      */
     public function getFhirTimeout()
     {

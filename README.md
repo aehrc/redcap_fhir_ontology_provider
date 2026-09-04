@@ -54,9 +54,13 @@ accepts the connection and then stalls: REDCap core's `http_get()`/`http_post()`
 but not its total-time timeout, so a hung response can still hold a web server process open indefinitely. The one
 exception is the `file_get_contents` fallback used when curl is unavailable, where the stream context `timeout`
 option is a true end-to-end limit. Closing that gap for the curl path requires the module to issue its own curl
-requests with an explicit `CURLOPT_TIMEOUT`, which is planned follow-up work. In the meantime, the circuit breaker
-below is what actually limits the damage from a stalling server: a hung call trivially exceeds 80% of the configured
-timeout, so it counts as a failure and trips the breaker after repeated occurrences.
+requests with an explicit `CURLOPT_TIMEOUT`, which is planned follow-up work. The circuit breaker below helps for
+the common case where a slow or erroring server *eventually* returns - a slow response, a connection reset, a
+timeout enforced at the OS or proxy layer - since those calls do return and get counted. It does not help against
+a true indefinite hang: the breaker is only informed after `httpGet()`/`httpPost()` returns, and a call that never
+returns is killed by PHP's own execution time limit first, so it is never recorded and never trips the breaker.
+Once the breaker does open, though, it stops all further calls outright, which is real protection against repeat
+failures of either kind.
 - ***Circuit breaker for terminology server failures***
 After 3 consecutive failed requests the module stops calling the FHIR server for 60 seconds and returns no results
 immediately, then lets a trial request through to check for recovery. The count and the window are held in module
