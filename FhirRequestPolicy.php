@@ -85,17 +85,23 @@ class FhirRequestPolicy
 
     /**
      * True when $url addresses the same origin as $baseUri, sits at or below its
-     * path, and contains no path-traversal attempts. Every outbound request is
-     * checked against the configured FHIR server so that a malformed or hostile
-     * setting cannot turn the module into a proxy for arbitrary hosts on the
-     * REDCap server's network.
+     * path, rejects embedded credentials, and contains no dot-segment traversal.
+     * Every outbound request is checked against the configured FHIR server so
+     * that a malformed or hostile setting cannot turn the module into a proxy for
+     * arbitrary hosts on the REDCap server's network.
      *
-     * The path is inspected after percent-decoding (all escapes, iteratively up
-     * to 5 times to catch double-encoding), normalizing backslashes to forward
-     * slashes, and stripping path parameters (;-delimited suffixes). Segments
-     * consisting entirely of dots (., .., ..., etc.) are rejected, as are any
-     * that remain after these transformations. Query strings are not inspected
-     * — only the path component is constrained.
+     * Specifically: scheme, host and port must match; the path must be the base
+     * or a descendant; and dot-segment traversal (., .., etc.) is rejected in
+     * literal, percent-encoded, double-encoded, backslash-separated, and
+     * ;-parameter-stripped forms. The path is inspected after iterative percent-
+     * decoding (up to 5 iterations), backslash normalisation, and parameter
+     * stripping, to catch multiple encoding layers and obfuscation techniques.
+     *
+     * The guarantee is specific to dot-segment traversal and the path component.
+     * Query strings are not inspected. Encoding techniques that modern servers
+     * reject per the Unicode spec (e.g. overlong UTF-8 sequences) are not blocked
+     * — the module constructs every outbound path from fixed components so such
+     * sequences never appear in practice.
      */
     public static function isWithinBase($url, $baseUri)
     {
