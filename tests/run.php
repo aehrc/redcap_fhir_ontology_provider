@@ -81,6 +81,38 @@ assertFalse(FhirRequestPolicy::opensBreaker(2), 'opensBreaker: below threshold')
 assertTrue(FhirRequestPolicy::opensBreaker(3), 'opensBreaker: at threshold');
 assertTrue(FhirRequestPolicy::opensBreaker(4), 'opensBreaker: above threshold');
 
+// --- isWithinBase ---------------------------------------------------------
+
+$base = 'https://ts.example.org/fhir';
+
+assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/ValueSet/$expand?url=x', $base),
+    'isWithinBase: expand under base');
+assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir', $base),
+    'isWithinBase: the base itself');
+assertTrue(FhirRequestPolicy::isWithinBase('https://TS.EXAMPLE.ORG/fhir/metadata', $base),
+    'isWithinBase: host comparison is case-insensitive');
+
+assertFalse(FhirRequestPolicy::isWithinBase('https://evil.example.com/fhir/metadata', $base),
+    'isWithinBase: different host rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('http://ts.example.org/fhir/metadata', $base),
+    'isWithinBase: scheme downgrade rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org:8443/fhir/metadata', $base),
+    'isWithinBase: differing explicit port rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://user:pass@ts.example.org/fhir/metadata', $base),
+    'isWithinBase: embedded credentials rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/other/metadata', $base),
+    'isWithinBase: path outside base rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhirX/metadata', $base),
+    'isWithinBase: sibling prefix rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('', $base), 'isWithinBase: empty url rejected');
+assertFalse(FhirRequestPolicy::isWithinBase(null, $base), 'isWithinBase: null url rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/metadata', ''),
+    'isWithinBase: empty base rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('not a url', $base), 'isWithinBase: garbage rejected');
+
+assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org:443/fhir/metadata', $base),
+    'isWithinBase: explicit default port matches implicit');
+
 // --- summary --------------------------------------------------------------
 
 $passed = $GLOBALS['tests_passed'];

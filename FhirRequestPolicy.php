@@ -82,4 +82,59 @@ class FhirRequestPolicy
     {
         return (int)$failureCount >= $threshold;
     }
+
+    /**
+     * True when $url addresses the same origin as $baseUri and sits at or below its
+     * path. Every outbound request is checked against the configured FHIR server so
+     * that a malformed or hostile setting cannot turn the module into a proxy for
+     * arbitrary hosts on the REDCap server's network.
+     */
+    public static function isWithinBase($url, $baseUri)
+    {
+        if (!is_string($url) || !is_string($baseUri) || '' === $url || '' === $baseUri) {
+            return false;
+        }
+        $u = parse_url($url);
+        $b = parse_url($baseUri);
+        if (!is_array($u) || !is_array($b)) {
+            return false;
+        }
+        // Credentials in the URL are never legitimate here and can disguise the host.
+        if (isset($u['user']) || isset($u['pass'])) {
+            return false;
+        }
+        foreach (array('scheme', 'host') as $part) {
+            if (!isset($u[$part]) || !isset($b[$part])) {
+                return false;
+            }
+            if (strtolower($u[$part]) !== strtolower($b[$part])) {
+                return false;
+            }
+        }
+        if (self::port($u) !== self::port($b)) {
+            return false;
+        }
+        $urlPath = isset($u['path']) ? $u['path'] : '/';
+        $basePath = isset($b['path']) ? rtrim($b['path'], '/') : '';
+        if ('' === $basePath) {
+            return true;
+        }
+        // Exact match, or a descendant - "/fhirX" must not pass against base "/fhir".
+        return $urlPath === $basePath || 0 === strpos($urlPath, $basePath . '/');
+    }
+
+    private static function port($parts)
+    {
+        if (isset($parts['port'])) {
+            return (int)$parts['port'];
+        }
+        $scheme = isset($parts['scheme']) ? strtolower($parts['scheme']) : '';
+        if ('https' === $scheme) {
+            return 443;
+        }
+        if ('http' === $scheme) {
+            return 80;
+        }
+        return 0;
+    }
 }
