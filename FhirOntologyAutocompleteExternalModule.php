@@ -156,7 +156,7 @@ EOD;
             $authPassword = $settings['basic_user_password'];
             $headers[] = 'Authorization: Basic ' . base64_encode($authUser . ':' . $authPassword);
         }
-        $metadata = $this->httpGet($fhirUrl . '/metadata', $headers);
+        $metadata = $this->httpGet($fhirUrl . '/metadata', $headers, $fhirUrl);
         if ($metadata === FALSE) {
             $errors .= "Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
         }
@@ -172,7 +172,7 @@ EOD;
             $headers[] = 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret);
 
             try {
-                $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
+                $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers, $authEndpoint);
                 if ($response === false) {
                     $r = isset($http_response_header) ? implode("", $http_response_header) : '';
                     $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' response = false, r='" . $r . "'\n";
@@ -930,10 +930,14 @@ EOD;
     }
 
 
-    public function httpGet($fullUrl, $headers)
+    public function httpGet($fullUrl, $headers, $baseOverride = null)
     {
         // getFhirServerUri() strips any trailing slash from the configured setting.
-        if (!FhirRequestPolicy::isWithinBase($fullUrl, $this->getFhirServerUri())) {
+        // Callers validating a candidate URL that has not been saved yet (e.g.
+        // validateSettings()) pass $baseOverride so the check runs against that
+        // candidate rather than the already-persisted setting.
+        $base = (null === $baseOverride) ? $this->getFhirServerUri() : $baseOverride;
+        if (!FhirRequestPolicy::isWithinBase($fullUrl, $base)) {
             return false;
         }
         $timeout = $this->getFhirTimeout();
@@ -970,13 +974,20 @@ EOD;
         return $content;
     }
 
-    public function httpPost($fullUrl, $postData, $contentType, $headers)
+    public function httpPost($fullUrl, $postData, $contentType, $headers, $baseOverride = null)
     {
         // The OAuth2 token endpoint is a different origin from the FHIR server by
         // design, so it is allowed on an exact match against its own setting.
-        $tokenEndpoint = $this->getSystemSetting('cc_token_endpoint');
-        $allowed = ($tokenEndpoint && $fullUrl === $tokenEndpoint)
-            || FhirRequestPolicy::isWithinBase($fullUrl, $this->getFhirServerUri());
+        // Callers validating a candidate URL that has not been saved yet (e.g.
+        // validateSettings()) pass $baseOverride so the check runs against that
+        // candidate rather than the already-persisted settings.
+        if (null !== $baseOverride) {
+            $allowed = FhirRequestPolicy::isWithinBase($fullUrl, $baseOverride);
+        } else {
+            $tokenEndpoint = $this->getSystemSetting('cc_token_endpoint');
+            $allowed = ($tokenEndpoint && $fullUrl === $tokenEndpoint)
+                || FhirRequestPolicy::isWithinBase($fullUrl, $this->getFhirServerUri());
+        }
         if (!$allowed) {
             return false;
         }
