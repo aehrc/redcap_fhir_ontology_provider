@@ -28,10 +28,11 @@ namespace AEHRC\FhirOntologyAutocompleteExternalModule;
 use ExternalModules\AbstractExternalModule;
 use ExternalModules\ExternalModules;
 
+require_once __DIR__ . '/FhirRequestPolicy.php';
+
 
 class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule implements \OntologyProvider
 {
-
     public function __construct()
     {
         parent::__construct();
@@ -155,7 +156,7 @@ EOD;
             $authPassword = $settings['basic_user_password'];
             $headers[] = 'Authorization: Basic ' . base64_encode($authUser . ':' . $authPassword);
         }
-        $metadata = $this->httpGet($fhirUrl . '/metadata', $headers);
+        $metadata = $this->httpGet($fhirUrl . '/metadata', $headers, $fhirUrl);
         if ($metadata === FALSE) {
             $errors .= "Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
         }
@@ -171,13 +172,25 @@ EOD;
             $headers[] = 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret);
 
             try {
-                $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
+                // $authEndpoint is passed as both the URL and its own base, so
+                // isWithinBase($authEndpoint, $authEndpoint) is trivially true here.
+                // That is intentional: it still validates well-formedness (scheme
+                // and host present, no dot-segment traversal, no stray credentials)
+                // on a value an admin just typed, but it is not a containment
+                // boundary check the way the other call sites use $baseOverride.
+                $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers, $authEndpoint);
                 if ($response === false) {
-                    $r = implode("", $http_response_header);
-                    $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' response = false, r='" . $r . "'\n";
+                    // $http_response_header is populated inside httpPost()'s own scope, not
+                    // here, so it is never available at this call site - do not promise a
+                    // response body this diagnostic can never show.
+                    $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - request failed or was refused\n";
                 } else {
-                    $responseJson = json_decode($response, true);
-                    if (!array_key_exists('access_token', $responseJson)) {
+                    // a false or unparseable response decodes to null, and array_key_exists(null)
+                    // is a fatal TypeError on PHP 8
+                    $responseJson = is_string($response) ? json_decode($response, true) : null;
+                    if (!is_array($responseJson)) {
+                        $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no parseable response\n";
+                    } else if (!array_key_exists('access_token', $responseJson)) {
                         $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
                     }
                 }
@@ -242,13 +255,8 @@ EOD;
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
         // Build URL to call
-        $headers = ['User-Agent: Redcap'];
-        $authHeader = $this->getAuthHeader();
-        if ($authHeader !== false) {
-            $headers[] = $authHeader;
-        }
         //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
-        // need to escape the $expand in the url! 
+        // need to escape the $expand in the url!
         $url = $fhir_server_uri . "/ValueSet/\$expand?" . http_build_query(array(
                 'url' => $valueset_id,
                 'filter' => $search_term,
@@ -256,30 +264,59 @@ EOD;
             ));
         // Call the URL
 
-        $json = $this->httpGet($url, $headers);
+        $fhirFailed = false;
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast rather than tying up a web
+            // server process on a request we already expect to time out.
+            $json = false;
+            $fhirFailed = true;
+        }
+        else {
+            $headers = ['User-Agent: Redcap'];
+            $authHeader = $this->getAuthHeader();
+            if ($authHeader !== false) {
+                $headers[] = $authHeader;
+            }
+            $startedAt = microtime(true);
+            $json = $this->httpGet($url, $headers);
+            if ($json === false) {
+                $fhirFailed = true;
+                $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
+            }
+            else {
+                $this->recordFhirSuccess();
+            }
+        }
         // Parse the JSON into an array
-        $list = json_decode($json, true);
-        $expansion = $list['expansion'];
+        $list = is_string($json) ? json_decode($json, true) : null;
         $results = array();
-        if (is_array($list) && isset($expansion['contains'])) {
+        if (is_array($list) && isset($list['expansion']['contains'])) {
+            $expansion = $list['expansion'];
             // Loop through results
             $hideChoice = $this->getHideChoice();
             foreach ($expansion['contains'] as $this_item) {
 
-                if (in_array($this_item['code'], $hideChoice)){
+                // code and system are not guaranteed present by FHIR
+                $code = isset($this_item['code']) ? $this_item['code'] : '';
+                $system = isset($this_item['system']) ? $this_item['system'] : '';
+                if ('' === $code) {
+                    // nothing storable without a code - skip rather than emitting "|system"
+                    continue;
+                }
+                if (in_array($code, $hideChoice)){
                     // in hide choice list
                     continue;
                 }
                 // Determine the value
                 // need to add the system as codes are not unique in SCT
-                $this_value = $this_item['code'] . "|" . $this_item['system'];
+                $this_value = $code . "|" . $system;
 
                 // Add to array
-                $results[$this_value] = $this_item['display'];
+                $results[$this_value] = isset($this_item['display']) ? $this_item['display'] : $code;
             }
         }
 
-        if (!$results) {
+        if (!$results && !$fhirFailed) {
             // no results found
             $return_no_result = $this->getSystemSetting('return_no_result');
             if ($return_no_result) {
@@ -294,16 +331,30 @@ EOD;
 
     function getHideChoice()
     {
+        // $Proj must be pulled in explicitly. Without this it is always null inside
+        // the method, so the in-memory fast path below never runs and every single
+        // keystroke falls through to a full getDataDictionary() call.
+        global $Proj;
+
         $codesToHide=[];
         if (isset($_GET['field'])){
             $field = $_GET['field'];
-            if (isset($Proj->metadata[$_GET['field']])) {
-                $annotations = $Proj->metadata[$field]['field_annotation'];
+            $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
+            $annotations = null;
+            if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
+                    && isset($Proj->metadata[$field])) {
+                // field_annotation is NULL for un-annotated fields, which is the common
+                // case - take the in-memory path on field presence, not on the annotation
+                // existing, or every un-annotated field falls back to a full dictionary load
+                $annotations = isset($Proj->metadata[$field]['field_annotation'])
+                    ? $Proj->metadata[$field]['field_annotation']
+                    : null;
             }
-            else if (isset($_GET['pid'])){
-                $project_id = $_GET['pid'];
+            else if ($project_id !== null){
                 $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
-                $annotations = $dd_array[$field]['field_annotation'];
+                $annotations = isset($dd_array[$field]['field_annotation'])
+                    ? $dd_array[$field]['field_annotation']
+                    : null;
             }
             if ($annotations) {
                 $offset = 0;
@@ -422,8 +473,12 @@ EOD;
               if (data.expansion && data.expansion.total) $('#fhirValueSet_expansion_count').text(data.expansion.total);
               if (data.expansion && data.expansion.contains){
                 for (v of data.expansion.contains){
-                  r = "<tr><td class='data'>" + v.display + "</td><td class='data'>" + v.code + "</td><td class='data'>"+v.system+"</td></tr>"
-                  $('#fhirValueSet_contains').append(r);
+                  // build via DOM so server supplied text can never be parsed as markup
+                  var row = $('<tr>');
+                  row.append($('<td>').addClass('data').text(v.display));
+                  row.append($('<td>').addClass('data').text(v.code));
+                  row.append($('<td>').addClass('data').text(v.system));
+                  $('#fhirValueSet_contains').append(row);
                 }
               }
             },
@@ -442,13 +497,17 @@ EOD;
               catch (e){
                 // not json
               }
-              var errorMessage = "Failed to load Valueset - Status : " + xhr.status + "<br>\\n"
+              // build via DOM - diagnostics echoes back text the user supplied as the
+              // valueset url, so it must never be concatenated into markup
+              var errorCell = $('<td>').addClass('data').attr('colspan', '3');
+              errorCell.append(document.createTextNode("Failed to load Valueset - Status : " + xhr.status));
               if (errorObject && errorObject.issue){
                 for (issue of errorObject.issue){
-                  errorMessage += issue.severity + " : " + issue.diagnostics + "<br>\\n";
+                  errorCell.append($('<br>'));
+                  errorCell.append(document.createTextNode(issue.severity + " : " + issue.diagnostics));
                 }
               }
-              $('#fhirValueSet_contains').append("<tr class='error'><td class='data' colspan='3'>" + errorMessage + "</td></tr>");
+              $('#fhirValueSet_contains').append($('<tr>').addClass('error').append(errorCell));
             }
           } );
           $('#fhir_valueset_dialog').dialog('open');
@@ -739,11 +798,21 @@ EOD;
         } else {
             return ['error' => "Unknown search type $type"];
         }
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast. Use the same ['error' => ...]
+            // shape as the "unknown search type" case above, rather than an empty
+            // array, so FindValueSetService.php can tell a genuine failure apart
+            // from "no matches" instead of returning a misleadingly successful
+            // empty result (see getValueSetInfo(), which does the equivalent with
+            // a false return).
+            return ['error' => 'The terminology server is not responding. Please try again shortly.'];
+        }
         $headers = ['User-Agent: Redcap'];
         $authHeader = $this->getAuthHeader();
         if ($authHeader !== false) {
             $headers[] = $authHeader;
         }
+        $startedAt = microtime(true);
         if ('GET' === $method) {
             $fullUrl = $this->getFhirServerUri() . $url . '?' . http_build_query($params);
             $result_json = $this->httpGet($fullUrl, $headers);
@@ -752,8 +821,10 @@ EOD;
             $result_json = $this->httpPost($fullUrl, $postData, $contentType, $headers);
         }
         if ($result_json === false) {
-            return [];
+            $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
+            return ['error' => 'The terminology server is not responding. Please try again shortly.'];
         }
+        $this->recordFhirSuccess();
         return $processFunction(json_decode($result_json, true));
     }
 
@@ -761,20 +832,176 @@ EOD;
     {
         $params = ["url" => $valueSet, "count" => 10];
         $fullUrl = $this->getFhirServerUri() . '/ValueSet/$expand?' . http_build_query($params);
+        if ($this->isCircuitOpen()) {
+            // Server has failed repeatedly - fail fast. false tells the service
+            // layer to emit a 502 rather than a misleading empty success.
+            return false;
+        }
         $headers = ['User-Agent: Redcap'];
         $authHeader = $this->getAuthHeader();
         if ($authHeader !== false) {
             $headers[] = $authHeader;
         }
-        return $this->httpGet($fullUrl, $headers);
+        $startedAt = microtime(true);
+        $response = $this->httpGet($fullUrl, $headers);
+        if ($response === false) {
+            $this->recordFhirFailureIfSlow(microtime(true) - $startedAt);
+            return false;
+        }
+        $this->recordFhirSuccess();
+        return $response;
     }
 
 
-    public function httpGet($fullUrl, $headers)
+    /**
+     * Maximum number of seconds allowed to *connect* to the FHIR server; it bounds
+     * an unreachable or refusing host. REDCap core's http_get()/http_post() helpers
+     * set curl's connect timeout but not its total-time timeout, so this does not
+     * currently bound a server that accepts the connection and then stalls - that
+     * call can still hold a web server process open indefinitely. The exception is
+     * the file_get_contents fallback used when curl is unavailable, where the
+     * stream context 'timeout' option is a true end-to-end limit. Closing this gap
+     * on the curl path requires the module to issue its own curl requests with an
+     * explicit CURLOPT_TIMEOUT, which is planned follow-up work. The circuit breaker
+     * (see isCircuitOpen()/recordFhirFailureIfSlow()) helps for the common case where
+     * a slow or erroring server eventually returns - a slow response, a connection
+     * reset, a timeout enforced at the OS or proxy layer - since those calls do
+     * return and get counted. It does not help against a true indefinite hang:
+     * recordFhirFailureIfSlow() only runs after httpGet()/httpPost() returns, and a
+     * call that never returns is killed by PHP's own execution time limit first, so
+     * it is never recorded and never trips the breaker. Once the breaker does open,
+     * though, it stops all further calls outright, which is real protection against
+     * repeat failures of either kind.
+     */
+    public function getFhirTimeout()
     {
+        return FhirRequestPolicy::resolveTimeout($this->getSystemSetting('fhir_timeout'));
+    }
+
+    /**
+     * True while the breaker is open, i.e. the FHIR server has failed repeatedly and
+     * we should fail fast instead of dialing out again.
+     *
+     * Once the open window elapses a caller that observes it re-arms the window before
+     * returning false, so that callers arriving behind it keep failing fast while it
+     * probes the server.
+     *
+     * This is best-effort, not a guarantee. The read and the write are separate
+     * round trips to the settings table with no lock between them, so two requests
+     * arriving together at the window boundary can both observe the window as expired
+     * and both probe. In practice that means normally one probe per window and
+     * occasionally a few - which is sufficient, because the breaker exists to prevent
+     * a stampede of every worker dialing a dead server, not to serialise probes.
+     */
+    public function isCircuitOpen()
+    {
+        $openUntil = $this->getSystemSetting('fhir_breaker_open_until');
+        $now = time();
+        if (FhirRequestPolicy::isOpen($openUntil, $now)) {
+            return true;
+        }
+        if (FhirRequestPolicy::needsRearm($openUntil, $now)) {
+            // Window elapsed. Re-arm before returning so callers behind this one keep
+            // failing fast while it probes. recordFhirSuccess() clears both keys when
+            // the probe succeeds, so the re-arm costs nothing on recovery.
+            $this->setSystemSetting('fhir_breaker_open_until', $now + FhirRequestPolicy::BREAKER_OPEN_SECONDS);
+        }
+        return false;
+    }
+
+    /**
+     * Counts a failure and opens the breaker once enough have accumulated.
+     *
+     * The increment is a read followed by a write with no lock between them, so
+     * simultaneous failures can overwrite one another and the count can lag the
+     * true number of failures. The effect is that the breaker may open after
+     * slightly more than BREAKER_FAILURE_THRESHOLD failures rather than exactly
+     * that many. It self-corrects as further failures arrive.
+     */
+    public function recordFhirFailure()
+    {
+        $failures = FhirRequestPolicy::nextFailureCount($this->getSystemSetting('fhir_breaker_failures'));
+        $this->setSystemSetting('fhir_breaker_failures', $failures);
+        if (FhirRequestPolicy::opensBreaker($failures)) {
+            $this->setSystemSetting('fhir_breaker_open_until', time() + FhirRequestPolicy::BREAKER_OPEN_SECONDS);
+        }
+    }
+
+    /**
+     * A failure only indicates server health if the call actually hung. A fast
+     * rejection (e.g. a malformed valueset url returning 4xx) must not trip the
+     * breaker for every other project on the system.
+     */
+    public function recordFhirFailureIfSlow($elapsedSeconds)
+    {
+        if (FhirRequestPolicy::countsAsFailure($elapsedSeconds, $this->getFhirTimeout())) {
+            $this->recordFhirFailure();
+        }
+    }
+
+    public function recordFhirSuccess()
+    {
+        // only write when there is state to clear, so a healthy server costs no writes
+        if ($this->getSystemSetting('fhir_breaker_failures')) {
+            $this->setSystemSetting('fhir_breaker_failures', 0);
+            $this->setSystemSetting('fhir_breaker_open_until', 0);
+        }
+    }
+
+
+    /**
+     * Returns $url with any embedded userinfo (user:pass@) stripped, for safe
+     * inclusion in log messages. Falls back to the original value if it cannot
+     * be parsed as a URL.
+     */
+    private function urlForLogging($url)
+    {
+        if (!is_string($url) || '' === $url) {
+            return (string)$url;
+        }
+        $parts = parse_url($url);
+        if (!is_array($parts) || (!isset($parts['user']) && !isset($parts['pass']))) {
+            return $url;
+        }
+        $result = '';
+        if (isset($parts['scheme'])) {
+            $result .= $parts['scheme'] . '://';
+        }
+        if (isset($parts['host'])) {
+            $result .= $parts['host'];
+        }
+        if (isset($parts['port'])) {
+            $result .= ':' . $parts['port'];
+        }
+        if (isset($parts['path'])) {
+            $result .= $parts['path'];
+        }
+        if (isset($parts['query'])) {
+            $result .= '?' . $parts['query'];
+        }
+        return $result;
+    }
+
+    public function httpGet($fullUrl, $headers, $baseOverride = null)
+    {
+        // getFhirServerUri() strips any trailing slash from the configured setting.
+        // Callers validating a candidate URL that has not been saved yet (e.g.
+        // validateSettings()) pass $baseOverride so the check runs against that
+        // candidate rather than the already-persisted setting. Passing the same
+        // value as both $fullUrl and $baseOverride validates well-formedness only
+        // (scheme/host present, no dot-segment traversal, no stray credentials) -
+        // it is not a containment boundary check, since isWithinBase(x, x) is
+        // trivially true.
+        $base = (null === $baseOverride) ? $this->getFhirServerUri() : $baseOverride;
+        if (!FhirRequestPolicy::isWithinBase($fullUrl, $base)) {
+            error_log('FhirOntologyAutocompleteExternalModule: httpGet refused URL outside configured FHIR server - url='
+                . $this->urlForLogging($fullUrl) . ' base=' . $this->urlForLogging($base));
+            return false;
+        }
+        $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_get in init_functions doesn't include the headers.
         if (function_exists('curl_init') || empty($headers)) {
-            return http_get($fullUrl, null, '', $headers, null);
+            return http_get($fullUrl, $timeout, '', $headers, null);
         }
         if (ini_get('allow_url_fopen')) {
             // Set http array for file_get_contents
@@ -782,7 +1009,7 @@ EOD;
             foreach ($headers as $hvalue) {
                 $headerText .= $hvalue . "\r\n";
             }
-            $http_array = array('method' => 'GET', 'header' => $headerText);
+            $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout);
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
                 $http_array['proxy'] = str_replace(array('http://', 'https://'), array('tcp://', 'tcp://'), PROXY_HOSTNAME);
@@ -805,18 +1032,42 @@ EOD;
         return $content;
     }
 
-    public function httpPost($fullUrl, $postData, $contentType, $headers)
+    public function httpPost($fullUrl, $postData, $contentType, $headers, $baseOverride = null)
     {
+        // The OAuth2 token endpoint is a different origin from the FHIR server by
+        // design, so it is allowed on an exact match against its own setting.
+        // Callers validating a candidate URL that has not been saved yet (e.g.
+        // validateSettings()) pass $baseOverride so the check runs against that
+        // candidate rather than the already-persisted settings. Passing the same
+        // value as both $fullUrl and $baseOverride validates well-formedness only
+        // (scheme/host present, no dot-segment traversal, no stray credentials) -
+        // it is not a containment boundary check, since isWithinBase(x, x) is
+        // trivially true.
+        if (null !== $baseOverride) {
+            $allowed = FhirRequestPolicy::isWithinBase($fullUrl, $baseOverride);
+            $baseForLog = $baseOverride;
+        } else {
+            $tokenEndpoint = $this->getSystemSetting('cc_token_endpoint');
+            $baseForLog = $this->getFhirServerUri();
+            $allowed = ($tokenEndpoint && $fullUrl === $tokenEndpoint)
+                || FhirRequestPolicy::isWithinBase($fullUrl, $baseForLog);
+        }
+        if (!$allowed) {
+            error_log('FhirOntologyAutocompleteExternalModule: httpPost refused URL outside configured FHIR server - url='
+                . $this->urlForLogging($fullUrl) . ' base=' . $this->urlForLogging($baseForLog));
+            return false;
+        }
+        $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
         // but the curl version will overwrite the content type header if other headers are included.
         if (function_exists('curl_init') && !empty($headers)
                  && $contentType && $contentType != 'application/x-www-form-urlencoded'){
             $fullHeaders = $headers;
             $fullHeaders[] = 'Content-type: '.$contentType;
-            return http_post($fullUrl, $postData, null, $contentType, '', $fullHeaders);
+            return http_post($fullUrl, $postData, $timeout, $contentType, '', $fullHeaders);
         }
         else if (function_exists('curl_init') || empty($headers)) {
-            return http_post($fullUrl, $postData, null, $contentType, '', $headers);
+            return http_post($fullUrl, $postData, $timeout, $contentType, '', $headers);
         }
         // If params are given as an array, then convert to query string format, else leave as is
         if ($contentType == 'application/json') {
@@ -839,7 +1090,8 @@ EOD;
 
             $http_array = array('method' => 'POST',
                 'header' => "Content-type: $contentType" . "\r\n" . $headerText . "Content-Length: " . strlen($param_string) . "\r\n",
-                'content' => $param_string
+                'content' => $param_string,
+                'timeout' => $timeout
             );
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
@@ -876,6 +1128,9 @@ EOD;
             $clientSecret = $this->getSystemSetting('cc_client_secret');
 
             $authToken = $this->getClientCredentialsToken($authEndpoint, $clientId, $clientSecret);
+            if ($authToken === false) {
+                return false;
+            }
             return 'Authorization: Bearer ' . $authToken;
         }
         elseif ($authType === 'basic') {
@@ -908,15 +1163,27 @@ EOD;
         $clear = true;
         try {
             $response = $this->httpPost($tokenEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
-            $responseJson = json_decode($response, true);
-            if (array_key_exists('access_token', $responseJson)) {
+            // a false or unparseable response decodes to null, and array_key_exists(null)
+            // is a fatal TypeError on PHP 8
+            $responseJson = is_string($response) ? json_decode($response, true) : null;
+            if (!is_array($responseJson)) {
+                error_log("Failed to negotiate auth token : no parseable response from " . $tokenEndpoint);
+            } elseif (array_key_exists('access_token', $responseJson)) {
                 $clear = false;
                 $_SESSION['FHIR_ONTOLOGY_TOKEN'] = $responseJson['access_token'];
-                if (array_key_exists('expires_in', $responseJson)) {
-                    $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + ($responseJson['expires_in'] * 1000);
-                } else {
-                    $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + (60 * 60 * 1000);
+                // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
+                // * 1000 cached a 3600s token for roughly 41 days. Renew early by
+                // margin = min(60, floor(lifetime / 2)): a minute early for normal
+                // lifetimes, halfway through for very short ones, and never an expiry
+                // beyond the real one.
+                $lifetime = array_key_exists('expires_in', $responseJson)
+                    ? (int)$responseJson['expires_in']
+                    : 3600;
+                if ($lifetime < 1) {
+                    $lifetime = 1;
                 }
+                $margin = (int)min(60, floor($lifetime / 2));
+                $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + $lifetime - $margin;
             } elseif (array_key_exists('error', $responseJson)) {
                 error_log("Failed to negotiate auth token : " . $responseJson['error'] . " - " . $responseJson['error_description']);
             } else {

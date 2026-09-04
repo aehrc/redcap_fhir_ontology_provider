@@ -70,14 +70,38 @@ if (!isset($params['action'])){
         }
         $valueSet = $params['valueSet'];
     }
+    else {
+        $sendErrorResponse('Invalid Request', 'Unknown action.');
+    }
 }
 
 if ('find' === $action){
     $result = $module->findValueSet($type, $query);
+    if (is_array($result) && array_key_exists('error', $result)) {
+        // Breaker open, transport failure, or (in practice unreachable, since
+        // $type is validated above) an unknown search type. Signal it with a
+        // non-2xx status, the same way getValueSetInfo()'s false return becomes
+        // a 502 below, instead of a 200 the autocomplete widget would read as a
+        // genuine "no matches".
+        http_response_code(502);
+    }
     echo json_encode($result, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
 }
 else {
-    echo $module->getValueSetInfo($valueSet);
+    $info = $module->getValueSetInfo($valueSet);
+    if ($info === false) {
+        // breaker open, or the server did not answer. Report it as an
+        // OperationOutcome so the designer dialog shows a real message
+        // instead of a silently empty result.
+        http_response_code(502);
+        echo json_encode(['resourceType' => 'OperationOutcome',
+            'issue' => [['severity' => 'error', 'code' => 'timeout',
+                'diagnostics' => 'The terminology server is not responding. Please try again shortly.']]],
+            JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
+    }
+    else {
+        echo $info;
+    }
 }
 
 exit();
