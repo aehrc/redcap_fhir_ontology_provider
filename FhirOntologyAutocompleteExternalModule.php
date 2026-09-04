@@ -841,9 +841,18 @@ EOD;
 
 
     /**
-     * Maximum number of seconds to wait on the FHIR server. Without a limit a slow
-     * or unavailable server holds a web server process open for the system default,
-     * which can exhaust the pool and take all of REDCap down with it.
+     * Maximum number of seconds allowed to *connect* to the FHIR server; it bounds
+     * an unreachable or refusing host. REDCap core's http_get()/http_post() helpers
+     * set curl's connect timeout but not its total-time timeout, so this does not
+     * currently bound a server that accepts the connection and then stalls - that
+     * call can still hold a web server process open indefinitely. The exception is
+     * the file_get_contents fallback used when curl is unavailable, where the
+     * stream context 'timeout' option is a true end-to-end limit. Closing this gap
+     * on the curl path requires the module to issue its own curl requests with an
+     * explicit CURLOPT_TIMEOUT, which is planned follow-up work. Until then, the
+     * circuit breaker (see isCircuitOpen()/recordFhirFailureIfSlow()) is what limits
+     * the damage from a stalling server, since a hung call trivially exceeds 80% of
+     * this timeout and counts as a failure.
      */
     public function getFhirTimeout()
     {

@@ -47,10 +47,16 @@ The `FindValueSetService` page was previously declared as a no-auth page, meanin
 in to REDCap. Because the FHIR server is typically on an internal network while REDCap is internet facing, this
 allowed anonymous users to query the terminology server through REDCap and read its responses. The no-auth
 declaration has been removed; the online designer is unaffected because it never used the no-auth route.
-- ***Requests to the FHIR server now time out***
-A new `FHIR request timeout (seconds)` setting (default 10) bounds how long REDCap waits for the terminology server.
-Previously there was no limit, so a slow or restarting FHIR server could hold web server processes open until the
-system default expired and make all of REDCap unresponsive.
+- ***Requests to the FHIR server now bound connection time***
+A new `FHIR request timeout (seconds)` setting (default 10) bounds how long REDCap waits to *connect* to the
+terminology server, protecting against an unreachable or refusing host. It does not currently bound a server that
+accepts the connection and then stalls: REDCap core's `http_get()`/`http_post()` helpers set curl's connect timeout
+but not its total-time timeout, so a hung response can still hold a web server process open indefinitely. The one
+exception is the `file_get_contents` fallback used when curl is unavailable, where the stream context `timeout`
+option is a true end-to-end limit. Closing that gap for the curl path requires the module to issue its own curl
+requests with an explicit `CURLOPT_TIMEOUT`, which is planned follow-up work. In the meantime, the circuit breaker
+below is what actually limits the damage from a stalling server: a hung call trivially exceeds 80% of the configured
+timeout, so it counts as a failure and trips the breaker after repeated occurrences.
 - ***Circuit breaker for terminology server failures***
 After 3 consecutive failed requests the module stops calling the FHIR server for 60 seconds and returns no results
 immediately, then lets a trial request through to check for recovery. The count and the window are held in module
