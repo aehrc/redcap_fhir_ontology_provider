@@ -327,17 +327,11 @@ EOD;
         // the method, so the in-memory fast path below never runs and every single
         // keystroke falls through to a full getDataDictionary() call.
         global $Proj;
-        // one lookup per request per field - autocomplete fires this on every keystroke
-        static $cache = array();
 
         $codesToHide=[];
         if (isset($_GET['field'])){
             $field = $_GET['field'];
             $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
-            $cacheKey = $project_id . '|' . $field;
-            if (isset($cache[$cacheKey])) {
-                return $cache[$cacheKey];
-            }
             $annotations = null;
             if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
                     && isset($Proj->metadata[$field])) {
@@ -365,7 +359,6 @@ EOD;
                     $offset = $matches[0][1] + strlen($matches[0][0]);
                 }
             }
-            $cache[$cacheKey] = $codesToHide;
         }
 
         return $codesToHide;
