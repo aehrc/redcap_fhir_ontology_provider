@@ -84,10 +84,13 @@ class FhirRequestPolicy
     }
 
     /**
-     * True when $url addresses the same origin as $baseUri and sits at or below its
-     * path. Every outbound request is checked against the configured FHIR server so
+     * True when $url addresses the same origin as $baseUri, sits at or below its
+     * path, and contains no dot segments (literal . or .., or percent-encoded %2e/%2f).
+     * Every outbound request is checked against the configured FHIR server so
      * that a malformed or hostile setting cannot turn the module into a proxy for
-     * arbitrary hosts on the REDCap server's network.
+     * arbitrary hosts on the REDCap server's network. Dot segments are rejected in
+     * both literal and percent-encoded form because the module constructs every
+     * request itself from fixed components and never requires traversal.
      */
     public static function isWithinBase($url, $baseUri)
     {
@@ -116,6 +119,12 @@ class FhirRequestPolicy
         }
         $urlPath = isset($u['path']) ? $u['path'] : '/';
         $basePath = isset($b['path']) ? rtrim($b['path'], '/') : '';
+
+        // Reject paths containing dot segments (literal or percent-encoded).
+        if (self::containsDotSegment($urlPath)) {
+            return false;
+        }
+
         if ('' === $basePath) {
             return true;
         }
@@ -136,5 +145,34 @@ class FhirRequestPolicy
             return 80;
         }
         return 0;
+    }
+
+    /**
+     * Returns true if $path contains any dot segment (. or ..) either literal or
+     * percent-encoded (%2e, %2E, %2f, %2F). Decodes percent sequences up to 5
+     * times to catch double-encoding without unbounded iteration.
+     */
+    private static function containsDotSegment($path)
+    {
+        // Repeatedly decode %25, %2e, %2f (case-insensitive) to collapse encoded
+        // and double-encoded forms, up to 5 iterations to prevent infinite loops.
+        for ($i = 0; $i < 5; $i++) {
+            $before = $path;
+            $path = preg_replace('/%25/i', '%', $path);
+            $path = preg_replace('/%2[eE]/i', '.', $path);
+            $path = preg_replace('/%2[fF]/i', '/', $path);
+            if ($path === $before) {
+                break; // No more replacements possible.
+            }
+        }
+
+        // Split by / and check each segment.
+        $segments = explode('/', $path);
+        foreach ($segments as $segment) {
+            if ('.' === $segment || '..' === $segment) {
+                return true;
+            }
+        }
+        return false;
     }
 }

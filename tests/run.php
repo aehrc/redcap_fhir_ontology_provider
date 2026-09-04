@@ -113,6 +113,30 @@ assertFalse(FhirRequestPolicy::isWithinBase('not a url', $base), 'isWithinBase: 
 assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org:443/fhir/metadata', $base),
     'isWithinBase: explicit default port matches implicit');
 
+// --- dot segments (literal and percent-encoded) ---------------------------
+
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/../admin', $base),
+    'isWithinBase: dot-dot segment rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/../../etc', $base),
+    'isWithinBase: multiple dot-dot segments rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/%2e%2e/admin', $base),
+    'isWithinBase: percent-encoded dot-dot lowercase rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/%2E%2E/admin', $base),
+    'isWithinBase: percent-encoded dot-dot uppercase rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/..%2fadmin', $base),
+    'isWithinBase: mixed literal and encoded dot-dot with encoded slash rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/%2e%2e%2fadmin', $base),
+    'isWithinBase: fully percent-encoded dot-dot-slash rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/%252e%252e/admin', $base),
+    'isWithinBase: double-encoded dot-dot rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/.', $base),
+    'isWithinBase: single dot segment rejected');
+assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/./metadata', $base),
+    'isWithinBase: dot segment before path rejected');
+
+assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/a.b/c', $base),
+    'isWithinBase: dot within segment name allowed');
+
 // --- summary --------------------------------------------------------------
 
 $passed = $GLOBALS['tests_passed'];
