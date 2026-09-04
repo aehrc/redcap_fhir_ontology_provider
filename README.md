@@ -19,9 +19,7 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
-### Version 0.5.2 changes
-
-This is a follow up release to 0.5.1. There are no new features.
+### Credential masking in the configuration page
 
 - ***Credential fields now masked in the configuration page***
 Both the Basic Auth password and the OAuth2 client secret now render masked in the module configuration page,
@@ -35,12 +33,14 @@ This change only masks the value shown in the configuration page. It does not en
 External Modules documentation states that values saved with a password setting are still stored as plain text.
 The credential remains readable in the `redcap_external_module_settings` table and in database backups.
 
-**Deploying:** place this version in a new directory `modules/fhir-ontology-provider_v0.5.2` alongside the existing
-version, and only enable it once version 0.5.1 has been proven in production.
+**Deploying the credential masking change:** changing a setting's type does not migrate the value already
+stored for it. After enabling a version that includes this change, the Basic Auth password must be re-entered
+before any lookup will succeed. The failure is silent - the dropdown returns empty with no error shown - so
+re-enter it immediately, and consider deploying this change in its own step rather than alongside others.
 
-### Version 0.5.1 changes
+### Security and performance fixes
 
-This is a security and performance release. There are no new features.
+These changes address security and performance issues raised in review. There are no new features.
 
 - ***Terminology lookup web service now requires authentication***
 The `FindValueSetService` page was previously declared as a no-auth page, meaning it could be called without logging
@@ -53,13 +53,14 @@ Previously there was no limit, so a slow or restarting FHIR server could hold we
 system default expired and make all of REDCap unresponsive.
 - ***Circuit breaker for terminology server failures***
 After 3 consecutive failed requests the module stops calling the FHIR server for 60 seconds and returns no results
-immediately, then allows a single trial request through to check for recovery. If ontology autocomplete appears dead
-for up to a minute after a terminology server restart, this is why. It protects REDCap as a whole from being taken
-down by terminology server downtime.
+immediately, then lets a trial request through to check for recovery. The count and the window are held in module
+settings without locking, so under concurrent load the breaker may admit more than one trial request per window and
+may open after slightly more than 3 failures. It is a stampede guard, not a precise counter. If ontology autocomplete
+appears dead for up to a minute after a terminology server restart, this is why. It protects REDCap as a whole from
+being taken down by terminology server downtime.
 - ***Fixed a data dictionary reload on every keystroke***
 `@HIDECHOICE` support was reloading the project data dictionary on every autocomplete keystroke, for every project,
-whether or not the field used `@HIDECHOICE`. The lookup is now cached per request and uses the already loaded project
-metadata where available.
+whether or not the field used `@HIDECHOICE`. The lookup now uses the already loaded project metadata where available.
 - ***Fixed OAuth2 token expiry calculation***
 Token lifetimes were treated as milliseconds rather than seconds, so an expired token could be reused for weeks,
 causing lookups to fail silently. This did not affect Basic Auth or unauthenticated servers, but would have affected
@@ -70,12 +71,13 @@ The Show Details dialog inserted values from the FHIR server into the page as HT
 Responses that are not valid JSON, expansions missing `code`, `system` or `display`, and unknown web service actions
 are now handled explicitly instead of producing PHP warnings.
 
-**Note:** masking of the stored Basic Auth password and OAuth2 client secret is *not* included in this release. It
-ships separately as version 0.5.2, described above, so that this release can be proven in production first.
+**Note:** masking of the stored Basic Auth password and OAuth2 client secret is *not* included in this set of
+changes. It ships separately - see "Credential masking in the configuration page" above - so that these changes
+can be proven in production first.
 
-**Deploying:** place this version in a new directory `modules/fhir-ontology-provider_v0.5.1` alongside the existing
-version rather than overwriting it. Enable the new version from the External Modules page. To roll back, switch the
-enabled version back to the previous one.
+**Deploying:** place the new version in its own directory alongside the existing one rather than overwriting it,
+enable it from the External Modules page, and confirm it behaves as expected before removing the old directory.
+To roll back, switch the enabled version back to the previous one.
 
 ### Version 0.5 changes 
 
