@@ -99,7 +99,17 @@ assertFalse(FhirRequestPolicy::isWithinBase('http://ts.example.org/fhir/metadata
 assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org:8443/fhir/metadata', $base),
     'isWithinBase: differing explicit port rejected');
 assertFalse(FhirRequestPolicy::isWithinBase('https://user:pass@ts.example.org/fhir/metadata', $base),
-    'isWithinBase: embedded credentials rejected');
+    'isWithinBase: embedded credentials rejected when base has none');
+
+$baseWithCreds = 'https://admin:s3cret@ts.example.org/fhir';
+
+assertTrue(FhirRequestPolicy::isWithinBase('https://admin:s3cret@ts.example.org/fhir/metadata', $baseWithCreds),
+    'isWithinBase: credentials matching the base exactly are allowed');
+assertFalse(FhirRequestPolicy::isWithinBase('https://admin:wrong@ts.example.org/fhir/metadata', $baseWithCreds),
+    'isWithinBase: credentials differing from the base are rejected');
+assertTrue(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhir/metadata', $baseWithCreds),
+    'isWithinBase: no credentials on the url is allowed when the base has its own');
+
 assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/other/metadata', $base),
     'isWithinBase: path outside base rejected');
 assertFalse(FhirRequestPolicy::isWithinBase('https://ts.example.org/fhirX/metadata', $base),

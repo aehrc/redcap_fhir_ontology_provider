@@ -172,6 +172,12 @@ EOD;
             $headers[] = 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret);
 
             try {
+                // $authEndpoint is passed as both the URL and its own base, so
+                // isWithinBase($authEndpoint, $authEndpoint) is trivially true here.
+                // That is intentional: it still validates well-formedness (scheme
+                // and host present, no dot-segment traversal, no stray credentials)
+                // on a value an admin just typed, but it is not a containment
+                // boundary check the way the other call sites use $baseOverride.
                 $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers, $authEndpoint);
                 if ($response === false) {
                     $r = isset($http_response_header) ? implode("", $http_response_header) : '';
@@ -941,7 +947,11 @@ EOD;
         // getFhirServerUri() strips any trailing slash from the configured setting.
         // Callers validating a candidate URL that has not been saved yet (e.g.
         // validateSettings()) pass $baseOverride so the check runs against that
-        // candidate rather than the already-persisted setting.
+        // candidate rather than the already-persisted setting. Passing the same
+        // value as both $fullUrl and $baseOverride validates well-formedness only
+        // (scheme/host present, no dot-segment traversal, no stray credentials) -
+        // it is not a containment boundary check, since isWithinBase(x, x) is
+        // trivially true.
         $base = (null === $baseOverride) ? $this->getFhirServerUri() : $baseOverride;
         if (!FhirRequestPolicy::isWithinBase($fullUrl, $base)) {
             return false;
@@ -986,7 +996,11 @@ EOD;
         // design, so it is allowed on an exact match against its own setting.
         // Callers validating a candidate URL that has not been saved yet (e.g.
         // validateSettings()) pass $baseOverride so the check runs against that
-        // candidate rather than the already-persisted settings.
+        // candidate rather than the already-persisted settings. Passing the same
+        // value as both $fullUrl and $baseOverride validates well-formedness only
+        // (scheme/host present, no dot-segment traversal, no stray credentials) -
+        // it is not a containment boundary check, since isWithinBase(x, x) is
+        // trivially true.
         if (null !== $baseOverride) {
             $allowed = FhirRequestPolicy::isWithinBase($fullUrl, $baseOverride);
         } else {

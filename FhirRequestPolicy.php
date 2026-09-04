@@ -85,10 +85,11 @@ class FhirRequestPolicy
 
     /**
      * True when $url addresses the same origin as $baseUri, sits at or below its
-     * path, rejects embedded credentials, and contains no dot-segment traversal.
-     * Every outbound request is checked against the configured FHIR server so
-     * that a malformed or hostile setting cannot turn the module into a proxy for
-     * arbitrary hosts on the REDCap server's network.
+     * path, carries no embedded credentials other than a copy of the base's own,
+     * and contains no dot-segment traversal. Every outbound request is checked
+     * against the configured FHIR server so that a malformed or hostile setting
+     * cannot turn the module into a proxy for arbitrary hosts on the REDCap
+     * server's network.
      *
      * Specifically: scheme, host and port must match; the path must be the base
      * or a descendant; and dot-segment traversal (., .., etc.) is rejected in
@@ -113,9 +114,20 @@ class FhirRequestPolicy
         if (!is_array($u) || !is_array($b)) {
             return false;
         }
-        // Credentials in the URL are never legitimate here and can disguise the host.
-        if (isset($u['user']) || isset($u['pass'])) {
-            return false;
+        // Credentials in the URL can disguise the host, so they are rejected unless
+        // they exactly match the userinfo already configured on the base itself -
+        // otherwise a site that legitimately configures fhir_api_url as
+        // https://user:pass@host/fhir would have every request rejected, failing
+        // silently with an empty result rather than the useful error this PR is
+        // trying to surface elsewhere.
+        $uUser = isset($u['user']) ? $u['user'] : null;
+        $uPass = isset($u['pass']) ? $u['pass'] : null;
+        if (null !== $uUser || null !== $uPass) {
+            $bUser = isset($b['user']) ? $b['user'] : null;
+            $bPass = isset($b['pass']) ? $b['pass'] : null;
+            if ($uUser !== $bUser || $uPass !== $bPass) {
+                return false;
+            }
         }
         foreach (array('scheme', 'host') as $part) {
             if (!isset($u[$part]) || !isset($b[$part])) {
