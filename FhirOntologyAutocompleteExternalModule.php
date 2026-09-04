@@ -923,6 +923,10 @@ EOD;
 
     public function httpGet($fullUrl, $headers)
     {
+        // getFhirServerUri() strips any trailing slash from the configured setting.
+        if (!FhirRequestPolicy::isWithinBase($fullUrl, $this->getFhirServerUri())) {
+            return false;
+        }
         $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_get in init_functions doesn't include the headers.
         if (function_exists('curl_init') || empty($headers)) {
@@ -959,6 +963,14 @@ EOD;
 
     public function httpPost($fullUrl, $postData, $contentType, $headers)
     {
+        // The OAuth2 token endpoint is a different origin from the FHIR server by
+        // design, so it is allowed on an exact match against its own setting.
+        $tokenEndpoint = $this->getSystemSetting('cc_token_endpoint');
+        $allowed = ($tokenEndpoint && $fullUrl === $tokenEndpoint)
+            || FhirRequestPolicy::isWithinBase($fullUrl, $this->getFhirServerUri());
+        if (!$allowed) {
+            return false;
+        }
         $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
         // but the curl version will overwrite the content type header if other headers are included.
