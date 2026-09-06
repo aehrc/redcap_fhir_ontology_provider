@@ -1,0 +1,25 @@
+name: system-tests
+
+# Deliberately not on push/pull_request: these hit a real public FHIR server,
+# and it being briefly down or slow is not this module's bug - it shouldn't
+# block anyone's unrelated PR. Runs on a schedule instead, and can be triggered
+# manually to check right now.
+on:
+  schedule:
+    - cron: '0 3 * * 1' # weekly, Monday 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  phpunit-system:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+
+      - run: composer install --no-interaction --no-progress
+
+      - run: vendor/bin/phpunit -c phpunit.system.xml --colors=never
