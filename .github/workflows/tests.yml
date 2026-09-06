@@ -39,4 +39,3 @@ jobs:
 
       - run: php -l FhirOntologyAutocompleteExternalModule.php
       - run: php -l FhirRequestPolicy.php
-      - run: php -l FindValueSetService.php

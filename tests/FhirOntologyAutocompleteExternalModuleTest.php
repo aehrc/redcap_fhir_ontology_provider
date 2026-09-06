@@ -396,43 +396,108 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
     }
 
     // --- getOnlineDesignerSection() ---
-    // Regression coverage for framework 16's CSRF requirement: browser-initiated
-    // POSTs to a module page now need a valid token, or the page fatals instead
-    // of returning JSON (found by running the workspace e2e suite against the
-    // framework-v16-upgrade branch - PHPUnit couldn't have caught this on its
-    // own, since it never renders or executes the JS, but it can at least lock
-    // in that the token is actually embedded once known to be required).
+    // Regression coverage for the module.ajax() migration: the Online Designer's
+    // ajax calls used to hand-roll $.ajax() + a manually embedded CSRF token
+    // against a standalone FindValueSetService.php page - both replaced by
+    // REDCap's own JavaScript Module Object, which handles CSRF/verification
+    // internally. PHPUnit can't render or execute this JS, but it can lock in
+    // that the JSMO is actually initialized and referenced correctly.
 
-    public function testOnlineDesignerSectionEmbedsCsrfTokenInBothAjaxCalls(): void
+    public function testOnlineDesignerSectionInitializesTheJavascriptModuleObject(): void
     {
         $html = $this->module->getOnlineDesignerSection();
 
-        // redcap_csrf_token is the only field that matters for a "type=module&page=..."
-        // request - API/index.php unconditionally copies it into
-        // redcap_external_module_csrf_token before the framework checks that field, so
-        // sending the latter directly from here would be silently discarded.
+        $this->assertStringContainsString('<!-- FAKE_JSMO_INIT -->', $html);
         $this->assertSame(
             2,
-            substr_count($html, "redcap_csrf_token: 'FAKE_CSRF_TOKEN'"),
-            'both ajax calls (search autocomplete + Show Details) must send the token'
+            substr_count($html, "FAKE.Js.ModuleObject.ajax("),
+            'both the search autocomplete and Show Details must call the module object\'s ajax()'
         );
-        // Not sent as a data field (it would be discarded anyway - see the JS
-        // comment this method renders) - only asserting the object-key form,
-        // since the explanation of *why* legitimately mentions the field name.
-        $this->assertStringNotContainsString('redcap_external_module_csrf_token:', $html);
+        $this->assertStringContainsString("FAKE.Js.ModuleObject.ajax('find-valueset',", $html);
+        $this->assertStringContainsString("FAKE.Js.ModuleObject.ajax('get-valueset-info',", $html);
+        // The old page-based approach is fully gone, not just unused.
+        $this->assertStringNotContainsString('FindValueSetService', $html);
+        $this->assertStringNotContainsString('redcap_csrf_token', $html);
+        $this->assertStringNotContainsString('$.ajax', $html);
     }
 
-    public function testOnlineDesignerSectionFallsBackToEmptyStringWhenCsrfTokenUnavailable(): void
+    // --- redcap_module_ajax() ---
+    // Backs getOnlineDesignerSection()'s two ajax calls - see config.json's
+    // auth-ajax-actions. Replaces the old FindValueSetService.php page's logic
+    // one-for-one (same delegation to findValueSet()/getValueSetInfo(), same
+    // validation), just reached via a different transport.
+
+    public function testRedcapModuleAjaxFindValuesetDelegatesToFindValueSet(): void
     {
-        // getCSRFToken() is documented as returning false when
-        // $_SESSION['redcap_csrf_token'] isn't set - not reachable from this
-        // method's only current caller, but guarded explicitly rather than
-        // relying on PHP's implicit false-to-'' string coercion.
-        $this->module->csrfTokenOverrideForTests = false;
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['snomed_support'] = true;
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => [
+            ['code' => 'C1', 'system' => 'sys', 'display' => 'Match'],
+        ]]]);
 
-        $html = $this->module->getOnlineDesignerSection();
+        $result = $this->module->redcap_module_ajax('find-valueset', ['type' => 'isa', 'query' => 'term'], null);
 
-        $this->assertStringContainsString("redcap_csrf_token: ''", $html);
+        $this->assertSame([['label' => 'Match', 'value' => 'http://snomed.info/sct?fhir_vs=isa/C1']], $result);
+    }
+
+    public function testRedcapModuleAjaxFindValuesetRejectsMissingParams(): void
+    {
+        $result = $this->module->redcap_module_ajax('find-valueset', ['type' => 'isa'], null);
+
+        $this->assertArrayHasKey('error', $result);
+    }
+
+    public function testRedcapModuleAjaxFindValuesetRejectsUnknownType(): void
+    {
+        $result = $this->module->redcap_module_ajax('find-valueset', ['type' => 'bogus', 'query' => 'x'], null);
+
+        $this->assertArrayHasKey('error', $result);
+    }
+
+    public function testRedcapModuleAjaxGetValuesetInfoDelegatesToGetValueSetInfo(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        FakeHttpTransport::$response = '{"resourceType":"ValueSet","status":"active"}';
+
+        $result = $this->module->redcap_module_ajax('get-valueset-info', ['valueSet' => 'http://example.test/vs'], null);
+
+        $this->assertSame(['resourceType' => 'ValueSet', 'status' => 'active'], $result);
+    }
+
+    public function testRedcapModuleAjaxGetValuesetInfoReportsTransportFailure(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        FakeHttpTransport::$response = false;
+
+        $result = $this->module->redcap_module_ajax('get-valueset-info', ['valueSet' => 'http://example.test/vs'], null);
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertCount(1, FakeHttpTransport::$calls, 'must exercise the fake transport, not be rejected before reaching it');
+    }
+
+    public function testRedcapModuleAjaxGetValuesetInfoReportsUnparseableResponse(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        FakeHttpTransport::$response = 'not json';
+
+        $result = $this->module->redcap_module_ajax('get-valueset-info', ['valueSet' => 'http://example.test/vs'], null);
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertCount(1, FakeHttpTransport::$calls, 'must exercise the fake transport, not be rejected before reaching it');
+    }
+
+    public function testRedcapModuleAjaxGetValuesetInfoRejectsMissingValueSet(): void
+    {
+        $result = $this->module->redcap_module_ajax('get-valueset-info', [], null);
+
+        $this->assertArrayHasKey('error', $result);
+    }
+
+    public function testRedcapModuleAjaxRejectsUnknownAction(): void
+    {
+        $result = $this->module->redcap_module_ajax('not-a-real-action', [], null);
+
+        $this->assertArrayHasKey('error', $result);
     }
 
     public function testHttpGetAllowsUrlWithinConfiguredFhirServer(): void

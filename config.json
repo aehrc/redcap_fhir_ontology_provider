@@ -170,6 +170,10 @@
       }
     }
   ],
+  "auth-ajax-actions": [
+    "find-valueset",
+    "get-valueset-info"
+  ],
   "compatibility": {
     "php-version-min": "8.0.0"
   }

@@ -34,18 +34,22 @@ namespace ExternalModules {
             $this->systemSettings[$key] = $value;
         }
 
-        /** @var string|false Lets a test simulate the real method's documented
-         *  `false` return (no CSRF session state yet) without needing to fake
-         *  a whole $_SESSION shape. */
-        public $csrfTokenOverrideForTests = 'FAKE_CSRF_TOKEN';
-
-        /** Real getCSRFToken() (from the Framework class) issues/returns a real
-         *  double-submit-cookie CSRF token, or false if session state isn't set
-         *  up yet - this fake returns a fixed, distinctive string by default,
-         *  overridable per test via $csrfTokenOverrideForTests. */
-        public function getCSRFToken()
+        /** Real getJavascriptModuleObjectName() returns a dotted namespace path
+         *  (e.g. "ExternalModules.AEHRC.FhirOntologyAutocompleteExternalModule")
+         *  - this fake just needs to be a distinctive, valid-JS-identifier-path
+         *  string tests can assert on. */
+        public function getJavascriptModuleObjectName()
         {
-            return $this->csrfTokenOverrideForTests;
+            return 'FAKE.Js.ModuleObject';
+        }
+
+        /** Real initializeJavascriptModuleObject() prints (not returns) a
+         *  <script> block wiring up window.<jsObjectName>.ajax(). This fake
+         *  just echoes a distinctive marker so tests can assert it was called,
+         *  without needing to fake CSRF/verification machinery. */
+        public function initializeJavascriptModuleObject()
+        {
+            echo '<!-- FAKE_JSMO_INIT -->';
         }
 
         /** Real getUrl() returns a webroot path plus a cache-busting
