@@ -34,12 +34,18 @@ namespace ExternalModules {
             $this->systemSettings[$key] = $value;
         }
 
+        /** @var string|false Lets a test simulate the real method's documented
+         *  `false` return (no CSRF session state yet) without needing to fake
+         *  a whole $_SESSION shape. */
+        public $csrfTokenOverrideForTests = 'FAKE_CSRF_TOKEN';
+
         /** Real getCSRFToken() (from the Framework class) issues/returns a real
-         *  double-submit-cookie CSRF token - this fake just needs to be a fixed,
-         *  distinctive string tests can assert on. */
+         *  double-submit-cookie CSRF token, or false if session state isn't set
+         *  up yet - this fake returns a fixed, distinctive string by default,
+         *  overridable per test via $csrfTokenOverrideForTests. */
         public function getCSRFToken()
         {
-            return 'FAKE_CSRF_TOKEN';
+            return $this->csrfTokenOverrideForTests;
         }
 
         /** Real getUrl() returns a webroot path plus a cache-busting

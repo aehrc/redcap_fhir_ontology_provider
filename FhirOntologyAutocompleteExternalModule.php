@@ -400,11 +400,30 @@ EOD;
     {
 
         $findValueSetService_url = $this->getUrl('FindValueSetService.php', false, true);
-        // Framework 16 requires this on every browser-initiated POST to a module
-        // page. getCSRFToken() (not a page-wide JS global - not every page that
+        // Framework 16 requires a 'redcap_csrf_token' POST field on every
+        // browser-initiated POST to a "type=module&page=..." module page
+        // (API/index.php's own comment: "The init files below remove CSRF
+        // tokens. Store them by a different name so the module framework can
+        // check them later" - it copies $_POST['redcap_csrf_token'] into
+        // $_POST['redcap_external_module_csrf_token'] itself, UNCONDITIONALLY
+        // overwriting whatever we send under that name - so sending the
+        // latter directly, as module.ajax() does for the unrelated
+        // "type=action" ajax-action dispatch, would be silently discarded
+        // here. Verified empirically: a request with only
+        // redcap_external_module_csrf_token set is rejected; one with only
+        // redcap_csrf_token set succeeds.
+        //
+        // getCSRFToken() (not a page-wide JS global - not every page that
         // could host this section is guaranteed to expose one) is the same
-        // framework method module.ajax() itself uses.
+        // value REDCap core's own window.redcap_csrf_token is derived from.
+        // It's documented as returning false when $_SESSION['redcap_csrf_token']
+        // isn't set - not reachable from this method's only current caller
+        // (the Online Designer, always an authenticated non-survey session by
+        // the time this renders), but guarded explicitly anyway rather than
+        // relying on PHP's implicit false-to-'' string coercion to make that
+        // safe by accident.
         $csrfToken = $this->getCSRFToken();
+        $csrfToken = is_string($csrfToken) ? $csrfToken : '';
         $loincSupport = $this->hasLoincSupport();
         $implicitSearchOptions = '';
         if ($this->hasSnomedSupport()){
@@ -478,11 +497,11 @@ EOD;
             type: "POST",
             url: '{$findValueSetService_url}',
             processData: true,
-            // Both fields, matching module.ajax()'s own implementation - core
-            // erases 'redcap_csrf_token' on some request paths, so the
-            // external-module-prefixed field is the one actually relied on,
-            // but both are sent for exactly the same reason module.ajax() does.
-            data: {action: 'info', valueSet: selected_valueset, redcap_external_module_csrf_token: '{$csrfToken}', redcap_csrf_token: '{$csrfToken}'},
+            // See the CSRF explanation on $csrfToken above (getOnlineDesignerSection()) -
+            // redcap_csrf_token is the field this "type=module&page=..." request actually
+            // needs; redcap_external_module_csrf_token would be silently overwritten by
+            // core before it's ever checked, so it isn't sent.
+            data: {action: 'info', valueSet: selected_valueset, redcap_csrf_token: '{$csrfToken}'},
             contentType: 'application/x-www-form-urlencoded',
             dataType: "json",
             success: function(data){
@@ -542,8 +561,8 @@ EOD;
     $("#fhir_valueset_search").autocomplete({
         source: function (request, response) {
             let search_type = $('#fhir_valueset_search_type').val();
-            // See the other $.ajax() call in this file for why both fields are sent.
-            let params = {action: 'find', query: request.term, type: search_type, redcap_external_module_csrf_token: '{$csrfToken}', redcap_csrf_token: '{$csrfToken}'};
+            // See the other $.ajax() call in this file for why this field is required.
+            let params = {action: 'find', query: request.term, type: search_type, redcap_csrf_token: '{$csrfToken}'};
             let processFunction = function (data) {
                 let result = [];
                 for (let v of data) {

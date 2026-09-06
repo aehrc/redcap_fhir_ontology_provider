@@ -407,14 +407,32 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
     {
         $html = $this->module->getOnlineDesignerSection();
 
-        // module.ajax() itself sends both fields (core erases 'redcap_csrf_token'
-        // on some request paths) - see the module's own inline comment for why.
+        // redcap_csrf_token is the only field that matters for a "type=module&page=..."
+        // request - API/index.php unconditionally copies it into
+        // redcap_external_module_csrf_token before the framework checks that field, so
+        // sending the latter directly from here would be silently discarded.
         $this->assertSame(
             2,
-            substr_count($html, "redcap_external_module_csrf_token: 'FAKE_CSRF_TOKEN'"),
+            substr_count($html, "redcap_csrf_token: 'FAKE_CSRF_TOKEN'"),
             'both ajax calls (search autocomplete + Show Details) must send the token'
         );
-        $this->assertSame(2, substr_count($html, "redcap_csrf_token: 'FAKE_CSRF_TOKEN'"));
+        // Not sent as a data field (it would be discarded anyway - see the JS
+        // comment this method renders) - only asserting the object-key form,
+        // since the explanation of *why* legitimately mentions the field name.
+        $this->assertStringNotContainsString('redcap_external_module_csrf_token:', $html);
+    }
+
+    public function testOnlineDesignerSectionFallsBackToEmptyStringWhenCsrfTokenUnavailable(): void
+    {
+        // getCSRFToken() is documented as returning false when
+        // $_SESSION['redcap_csrf_token'] isn't set - not reachable from this
+        // method's only current caller, but guarded explicitly rather than
+        // relying on PHP's implicit false-to-'' string coercion.
+        $this->module->csrfTokenOverrideForTests = false;
+
+        $html = $this->module->getOnlineDesignerSection();
+
+        $this->assertStringContainsString("redcap_csrf_token: ''", $html);
     }
 
     public function testHttpGetAllowsUrlWithinConfiguredFhirServer(): void
