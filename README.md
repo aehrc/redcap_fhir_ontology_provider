@@ -19,6 +19,70 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### Credential masking in the configuration page
+
+- ***Credential fields now masked in the configuration page***
+Both the Basic Auth password and the OAuth2 client secret now render masked in the module configuration page,
+instead of being displayed in plain text.
+- ***The stored credentials do NOT migrate***
+Changing a setting's type does not migrate the value already stored for it. Both the Basic Auth password and the
+OAuth2 client secret must be re-entered immediately after upgrading, or FHIR lookups will start failing. This
+failure is silent: the lookup fails and the dropdown comes back empty, with no error shown to the user. This is why
+both credentials must be re-entered immediately after upgrading.
+- ***Masking is display only - it does NOT encrypt the value at rest***
+This change only masks the value shown in the configuration page. It does not encrypt the value in storage. The
+External Modules documentation states that values saved with a password setting are still stored as plain text.
+The credential remains readable in the `redcap_external_module_settings` table and in database backups.
+
+### Security and performance fixes
+
+These changes address security and performance issues raised in review. There are no new features.
+
+- ***Terminology lookup web service now requires authentication***
+The `FindValueSetService` page was previously declared as a no-auth page, meaning it could be called without logging
+in to REDCap. Because the FHIR server is typically on an internal network while REDCap is internet facing, this
+allowed anonymous users to query the terminology server through REDCap and read its responses. The no-auth
+declaration has been removed; the online designer is unaffected because it never used the no-auth route.
+- ***Requests to the FHIR server now bound connection time***
+A new `FHIR request timeout (seconds)` setting (default 10) bounds how long REDCap waits to *connect* to the
+terminology server, protecting against an unreachable or refusing host. It does not currently bound a server that
+accepts the connection and then stalls: REDCap core's `http_get()`/`http_post()` helpers set curl's connect timeout
+but not its total-time timeout, so a hung response can still hold a web server process open indefinitely. The one
+exception is the `file_get_contents` fallback used when curl is unavailable, where the stream context `timeout`
+option is a true end-to-end limit. Closing that gap for the curl path requires the module to issue its own curl
+requests with an explicit `CURLOPT_TIMEOUT`, which is planned follow-up work. The circuit breaker below helps for
+the common case where a slow or erroring server *eventually* returns - a slow response, a connection reset, a
+timeout enforced at the OS or proxy layer - since those calls do return and get counted. It does not help against
+a true indefinite hang: the breaker is only informed after `httpGet()`/`httpPost()` returns, and a call that never
+returns is killed by PHP's own execution time limit first, so it is never recorded and never trips the breaker.
+Once the breaker does open, though, it stops all further calls outright, which is real protection against repeat
+failures of either kind.
+- ***Outbound FHIR requests are now constrained to the configured server***
+Every URL this module builds before sending a request is checked against the configured `FHIR API URL`: it must
+address the same origin and sit at or below its path. A request that would fall outside that (for example, one
+built from a malformed or hostile setting) is refused rather than sent. See `FhirRequestPolicy::isWithinBase()`
+for exactly what this does and does not cover.
+- ***Circuit breaker for terminology server failures***
+After 3 consecutive *slow* failures - calls that consume most of the timeout before failing - the module stops
+calling the FHIR server for 60 seconds and returns no results immediately, then lets a trial request through to
+check for recovery. A fast failure, such as a quick 4xx response, neither counts towards this nor resets the count.
+The count and the window are held in module settings without locking, so under concurrent load the breaker may admit more than one trial request per window and
+may open after slightly more than 3 failures. It is a stampede guard, not a precise counter. If ontology autocomplete
+appears dead for up to a minute after a terminology server restart, this is why. It protects REDCap as a whole from
+being taken down by terminology server downtime.
+- ***Fixed a data dictionary reload on every keystroke***
+`@HIDECHOICE` support was reloading the project data dictionary on every autocomplete keystroke, for every project,
+whether or not the field used `@HIDECHOICE`. The lookup now uses the already loaded project metadata where available.
+- ***Fixed OAuth2 token expiry calculation***
+Token lifetimes were treated as milliseconds rather than seconds, so an expired token could be reused for weeks,
+causing lookups to fail silently. This did not affect Basic Auth or unauthenticated servers, but would have affected
+any site using OAuth2 client credentials.
+- ***Fixed cross site scripting in the ValueSet details dialog***
+The Show Details dialog inserted values from the FHIR server into the page as HTML. Values are now inserted as text.
+- ***More robust error handling***
+Responses that are not valid JSON, expansions missing `code`, `system` or `display`, and unknown web service actions
+are now handled explicitly instead of producing PHP warnings.
+
 ### Version 0.5 changes 
 
 - ***Change storage format***
@@ -56,6 +120,7 @@ The following site wide settings are available:
      * `https://tx.ontoserver.csiro.au/fhir` an Australian server with the Australian edition of SNOMED CT as its default. The server also contains LOINC and other code systems.
      * `https://snowstorm-fhir.snomedtools.org/fhir` is a test server hosted by snomed, it does not include LOINC or non-snomed code systems and valuesets. This means when selecting a valueset to use only the `SnomedCT Refset` and `SnomedCT isa implicit valueset` selection options will find a valueset.
      * `https://fhir.loinc.org` is a test server hosted by LOINC (see https://loinc.org/fhir/). This server uses basic authentication and only contains LOINC, not SNOMED CT or other valuesets.
+  * `FHIR request timeout (seconds)` - the maximum time to wait to *connect* to the FHIR server before giving up. Defaults to 10 seconds if left blank. It protects against an unreachable or refusing host; it does not currently bound a server that accepts the connection and then stalls (see "Security and performance fixes" below). Increase it if the terminology server is slow to accept connections; decrease it to fail faster.
   * `SNOMEDCT Support` - when this checkbox is checked the search by 'SNOMED CT Refset' and 'SNOMED CT isa implicit valueset' will be made available.
   * `LOINC Support` - this dropdown controls the use of search by 'LOINC implicit answer set'. It options are
     *  `LOINC not available` - The search by 'LOINC implicit answer set' will not be available.
