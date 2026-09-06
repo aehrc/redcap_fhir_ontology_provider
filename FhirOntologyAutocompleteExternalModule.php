@@ -400,6 +400,11 @@ EOD;
     {
 
         $findValueSetService_url = $this->getUrl('FindValueSetService.php', false, true);
+        // Framework 16 requires this on every browser-initiated POST to a module
+        // page. getCSRFToken() (not a page-wide JS global - not every page that
+        // could host this section is guaranteed to expose one) is the same
+        // framework method module.ajax() itself uses.
+        $csrfToken = $this->getCSRFToken();
         $loincSupport = $this->hasLoincSupport();
         $implicitSearchOptions = '';
         if ($this->hasSnomedSupport()){
@@ -473,7 +478,11 @@ EOD;
             type: "POST",
             url: '{$findValueSetService_url}',
             processData: true,
-            data: {action: 'info', valueSet: selected_valueset},
+            // Both fields, matching module.ajax()'s own implementation - core
+            // erases 'redcap_csrf_token' on some request paths, so the
+            // external-module-prefixed field is the one actually relied on,
+            // but both are sent for exactly the same reason module.ajax() does.
+            data: {action: 'info', valueSet: selected_valueset, redcap_external_module_csrf_token: '{$csrfToken}', redcap_csrf_token: '{$csrfToken}'},
             contentType: 'application/x-www-form-urlencoded',
             dataType: "json",
             success: function(data){
@@ -533,7 +542,8 @@ EOD;
     $("#fhir_valueset_search").autocomplete({
         source: function (request, response) {
             let search_type = $('#fhir_valueset_search_type').val();
-            let params = {action: 'find', query: request.term, type: search_type};
+            // See the other $.ajax() call in this file for why both fields are sent.
+            let params = {action: 'find', query: request.term, type: search_type, redcap_external_module_csrf_token: '{$csrfToken}', redcap_csrf_token: '{$csrfToken}'};
             let processFunction = function (data) {
                 let result = [];
                 for (let v of data) {
