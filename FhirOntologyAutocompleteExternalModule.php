@@ -117,6 +117,17 @@ EOD;
 
     public function validateSettings($settings)
     {
+        // Every setting this module declares is system-level (config.json has no
+        // "project-settings" key at all), so a project-scope Configure dialog save
+        // calls this with none of them present in $settings. Previously this fell
+        // through to an unconditional httpGet($settings['fhir_api_url'] . '/metadata', ...)
+        // with an undefined/empty fhir_api_url, which always failed and surfaced
+        // "Failed to get metadata for fhir server at ''" on every project-level
+        // save - there is nothing to validate at that scope, so return early.
+        if (!array_key_exists('fhir_api_url', $settings)) {
+            return '';
+        }
+
         $errors = '';
 
         $rnr = $settings['return_no_result'];
