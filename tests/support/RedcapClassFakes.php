@@ -68,6 +68,11 @@ namespace {
 
     class REDCap
     {
+        public static function escapeHtml($value)
+        {
+            return htmlspecialchars((string)$value, ENT_QUOTES);
+        }
+
         /** @var int Call counter so tests can assert getHideChoice()'s $Proj
          *  fast path avoided this full-dictionary-reload path. */
         public static int $getDataDictionaryCallCount = 0;
