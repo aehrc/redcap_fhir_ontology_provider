@@ -430,6 +430,24 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertStringNotContainsString('<script type="text/javascript">', $html);
     }
 
+    public function testOnlineDesignerSectionEscapesTheModuleObjectNameInTheDataAttribute(): void
+    {
+        // getJavascriptModuleObjectName() is a REDCap-core-computed value, not
+        // attacker input - but the data-module-object attribute must still be
+        // safe against a value containing HTML metacharacters, since the
+        // escapeHtml() call is what actually guarantees that, not the value's
+        // real-world shape.
+        $this->module->jsModuleObjectName = 'FAKE"><script>alert(1)</script>';
+
+        $html = $this->module->getOnlineDesignerSection();
+
+        $this->assertStringContainsString(
+            'data-module-object="FAKE&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"',
+            $html
+        );
+        $this->assertStringNotContainsString('<script>alert(1)</script>', $html);
+    }
+
     public function testTooltipScriptsLoadExtractedJsFileNotInlineScript(): void
     {
         $this->module->systemSettings['add_value_tooltip'] = true;
@@ -454,9 +472,14 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
 
         ob_start();
         $this->module->redcap_data_entry_form(1, 1, 'instrument', 1, null, 1);
-        $html = ob_get_clean();
+        $dataEntryHtml = ob_get_clean();
 
-        $this->assertSame('', $html);
+        ob_start();
+        $this->module->redcap_survey_page(1, 1, 'instrument', 1, null, 'hash', 1, 1);
+        $surveyHtml = ob_get_clean();
+
+        $this->assertSame('', $dataEntryHtml);
+        $this->assertSame('', $surveyHtml);
     }
 
     // --- redcap_module_ajax() ---
