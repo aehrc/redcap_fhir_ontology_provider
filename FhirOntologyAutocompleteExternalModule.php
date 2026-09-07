@@ -552,6 +552,7 @@ EOD;
           // only rejects for a framework-level failure, e.g. verification).
           {$jsObjectName}.ajax('get-valueset-info', {valueSet: selected_valueset}).then(function(data){
             if (data && data.error){
+              $('#fhirValueSet_url').text(selected_valueset);
               renderValuesetError(data.error);
               return;
             }
