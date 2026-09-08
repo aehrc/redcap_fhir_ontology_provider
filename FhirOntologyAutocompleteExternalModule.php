@@ -266,14 +266,30 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         // Set 20 as default limit
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
+        $searchOptions = $this->getSearchOptions();
+        $priorityCodes = $searchOptions['priority-codes'];
+
+        $fetchLimit = $result_limit;
+        if (!empty($priorityCodes)) {
+            // Extra headroom so every listed priority code has a chance to appear
+            // in the response before final truncation - mirrors
+            // advanced_fhir_ontology_provider's priority-max-fetch, but sized
+            // automatically from the priority list's own length rather than as
+            // a second, separately-tunable option.
+            $fetchLimit += count($priorityCodes);
+        }
+
         // Build URL to call
         //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
         // need to escape the $expand in the url!
-        $url = $fhir_server_uri . "/ValueSet/\$expand?" . http_build_query(array(
-                'url' => $valueset_id,
-                'filter' => $search_term,
-                'count' => $result_limit
-            ));
+        $expandParams = array(
+            'url' => $valueset_id,
+            'count' => $fetchLimit
+        );
+        if (!$searchOptions['return-all']) {
+            $expandParams['filter'] = $search_term;
+        }
+        $url = $fhir_server_uri . "/ValueSet/\$expand?" . http_build_query($expandParams);
         // Call the URL
 
         $fhirFailed = false;
@@ -301,7 +317,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         }
         // Parse the JSON into an array
         $list = is_string($json) ? json_decode($json, true) : null;
-        $results = array();
+        $entries = array();
         if (is_array($list) && isset($list['expansion']['contains'])) {
             $expansion = $list['expansion'];
             // Loop through results
@@ -319,13 +335,23 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                     // in hide choice list
                     continue;
                 }
-                // Determine the value
-                // need to add the system as codes are not unique in SCT
-                $this_value = $code . "|" . $system;
-
-                // Add to array
-                $results[$this_value] = isset($this_item['display']) ? $this_item['display'] : $code;
+                $display = isset($this_item['display']) ? $this_item['display'] : $code;
+                $entries[] = array('code' => $code, 'system' => $system, 'display' => $display);
             }
+        }
+
+        if (!empty($entries) && ($searchOptions['return-all'] || !empty($priorityCodes))) {
+            $entries = $this->rankSearchEntries($entries, $search_term, $searchOptions);
+        }
+
+        // need to add the system as codes are not unique in SCT - ${CODE}|${SYSTEM}
+        // is the default when no @ONTOLOGY-OPTIONS code-template is set, exactly
+        // matching this method's previous unconditional $code . "|" . $system.
+        $codeTemplate = $searchOptions['code-template'] !== null ? $searchOptions['code-template'] : '${CODE}|${SYSTEM}';
+        $results = array();
+        foreach ($entries as $entry) {
+            $this_value = str_replace(['${CODE}', '${SYSTEM}'], [$entry['code'], $entry['system']], $codeTemplate);
+            $results[$this_value] = $entry['display'];
         }
 
         if (!$results && !$fhirFailed) {
@@ -341,47 +367,159 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         return array_slice($results, 0, $result_limit, true);
     }
 
-    function getHideChoice()
+    /**
+     * Reorders $entries (each ['code'=>..., 'system'=>..., 'display'=>...])
+     * per the field's @ONTOLOGY-OPTIONS: priority-codes sorts first (in the
+     * order listed, code only - not system, matching
+     * advanced_fhir_ontology_provider's exact precedent), then, among the
+     * rest, return-all's match-ranking (code/display case-insensitively
+     * containing $search_term sorts before non-matches). Both keys use a
+     * stable sort (array_multisort, guaranteed stable since PHP 8.0), so ties
+     * keep their original relative (server-returned) order.
+     *
+     * Match-ranking is skipped when $search_term is empty (nothing to rank
+     * by) - this only affects the match key, not priority ranking, so
+     * priority-codes still works even if this method is ever called with an
+     * empty term.
+     */
+    private function rankSearchEntries($entries, $search_term, $searchOptions)
+    {
+        $priorityCodes = $searchOptions['priority-codes'];
+        $priorityCount = count($priorityCodes);
+        $applyMatchRanking = $searchOptions['return-all'] && '' !== trim((string)$search_term);
+
+        $priorityKeys = array();
+        $matchKeys = array();
+        foreach ($entries as $entry) {
+            $priorityRank = array_search($entry['code'], $priorityCodes, true);
+            $priorityKeys[] = ($priorityRank === false) ? $priorityCount : $priorityRank;
+
+            if ($applyMatchRanking) {
+                $isMatch = (false !== stripos($entry['code'], $search_term))
+                    || (false !== stripos($entry['display'], $search_term));
+                $matchKeys[] = $isMatch ? 0 : 1;
+            } else {
+                $matchKeys[] = 0;
+            }
+        }
+
+        array_multisort($priorityKeys, SORT_ASC, $matchKeys, SORT_ASC, $entries);
+        return $entries;
+    }
+
+    /**
+     * Returns the field currently being searched's raw field_annotation string,
+     * or null if there isn't one (or no field is being searched at all). Shared
+     * by getHideChoice() and getSearchOptions() - both need "what does this
+     * field's annotation say", just looking for different tags within it.
+     */
+    private function getFieldAnnotation()
     {
         // $Proj must be pulled in explicitly. Without this it is always null inside
         // the method, so the in-memory fast path below never runs and every single
         // keystroke falls through to a full getDataDictionary() call.
         global $Proj;
 
+        if (!isset($_GET['field'])) {
+            return null;
+        }
+        $field = $_GET['field'];
+        $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
+
+        if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
+                && isset($Proj->metadata[$field])) {
+            // field_annotation is NULL for un-annotated fields, which is the common
+            // case - take the in-memory path on field presence, not on the annotation
+            // existing, or every un-annotated field falls back to a full dictionary load
+            return isset($Proj->metadata[$field]['field_annotation'])
+                ? $Proj->metadata[$field]['field_annotation']
+                : null;
+        }
+        if ($project_id !== null){
+            $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
+            return isset($dd_array[$field]['field_annotation'])
+                ? $dd_array[$field]['field_annotation']
+                : null;
+        }
+        return null;
+    }
+
+    function getHideChoice()
+    {
         $codesToHide=[];
-        if (isset($_GET['field'])){
-            $field = $_GET['field'];
-            $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
-            $annotations = null;
-            if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
-                    && isset($Proj->metadata[$field])) {
-                // field_annotation is NULL for un-annotated fields, which is the common
-                // case - take the in-memory path on field presence, not on the annotation
-                // existing, or every un-annotated field falls back to a full dictionary load
-                $annotations = isset($Proj->metadata[$field]['field_annotation'])
-                    ? $Proj->metadata[$field]['field_annotation']
-                    : null;
-            }
-            else if ($project_id !== null){
-                $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
-                $annotations = isset($dd_array[$field]['field_annotation'])
-                    ? $dd_array[$field]['field_annotation']
-                    : null;
-            }
-            if ($annotations) {
-                $offset = 0;
-                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
-                    $listedCodesStr = $matches[1][0];
-                    $listedCodes = explode(',', $listedCodesStr);
-                    foreach($listedCodes as $code){
-                        array_push($codesToHide, trim($code));
-                    }
-                    $offset = $matches[0][1] + strlen($matches[0][0]);
+        $annotations = $this->getFieldAnnotation();
+        if ($annotations) {
+            $offset = 0;
+            while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
+                $listedCodesStr = $matches[1][0];
+                $listedCodes = explode(',', $listedCodesStr);
+                foreach($listedCodes as $code){
+                    array_push($codesToHide, trim($code));
                 }
+                $offset = $matches[0][1] + strlen($matches[0][0]);
             }
         }
 
         return $codesToHide;
+    }
+
+    /**
+     * Parses @ONTOLOGY-OPTIONS='...' from the current field's annotation into
+     * ['return-all' => bool, 'code-template' => string|null, 'priority-codes' => string[]].
+     *
+     * Options are semicolon-separated, not comma-separated like @HIDECHOICE -
+     * priority-codes needs its own comma-separated list of codes, and a plain
+     * comma-separated option list would make "priority-codes=123,456" and
+     * "return-all,priority-codes=123,456" ambiguous to split. Unrecognized
+     * tokens (and unrecognized keys) are ignored, so a malformed tag degrades
+     * to "no options applied" rather than an error, and a future option name
+     * added here is forward-compatible with older deployments that don't
+     * understand it yet.
+     */
+    function getSearchOptions()
+    {
+        $options = ['return-all' => false, 'code-template' => null, 'priority-codes' => []];
+        $annotations = $this->getFieldAnnotation();
+        if (!$annotations) {
+            return $options;
+        }
+        $offset = 0;
+        while (preg_match("/@ONTOLOGY-OPTIONS='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            $this->applySearchOptionTokens($matches[1][0], $options);
+            $offset = $matches[0][1] + strlen($matches[0][0]);
+        }
+        return $options;
+    }
+
+    private function applySearchOptionTokens($tokenString, array &$options)
+    {
+        foreach (explode(';', $tokenString) as $token) {
+            $token = trim($token);
+            if ($token === '') {
+                continue;
+            }
+            if ($token === 'return-all') {
+                $options['return-all'] = true;
+                continue;
+            }
+            $eqPos = strpos($token, '=');
+            if ($eqPos === false) {
+                continue; // unrecognized bare token - ignored
+            }
+            $key = trim(substr($token, 0, $eqPos));
+            $value = substr($token, $eqPos + 1);
+            if ($key === 'code-template') {
+                $options['code-template'] = $value;
+            } else if ($key === 'priority-codes') {
+                foreach (explode(',', $value) as $code) {
+                    $trimmed = trim($code);
+                    if ($trimmed !== '') {
+                        $options['priority-codes'][] = $trimmed;
+                    }
+                }
+            }
+            // unrecognized key - ignored
+        }
     }
 
 

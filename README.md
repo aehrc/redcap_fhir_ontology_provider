@@ -37,6 +37,14 @@ dialog) discards whatever was being reviewed and leaves the previously saved sel
 The value saved against a field (`FHIR:<valueset-url>`) is exactly the same as before this change; only the Online
 Designer's own UI for choosing it is different. Fields configured under the old widget need no migration.
 
+### @ONTOLOGY-OPTIONS action tag
+
+- ***Field-level control over search-all, stored value format, and priority codes***
+A new `@ONTOLOGY-OPTIONS` action tag lets a project designer opt an individual field into `return-all` (browse a
+small answer-list ValueSet without needing to guess its exact wording), `code-template` (override the stored
+value's format), and `priority-codes` (push specific codes to the top of results) - see
+[@ONTOLOGY-OPTIONS support](#ontology-options-support) below for the full syntax and worked examples.
+
 ### Online Designer ontology picker now uses REDCap's module.ajax()
 
 - ***`FindValueSetService` page removed***
@@ -201,6 +209,46 @@ field. The module will not try to expand piped variables in the choice list.
 ```text
 @HIDECHOICE='code1,code2'
 ```
+
+
+### @ONTOLOGY-OPTIONS support
+`@ONTOLOGY-OPTIONS` is a field-level action tag (same convention as `@HIDECHOICE` above) that controls how the
+Online Designer's data-entry autocomplete search behaves for that specific field. It takes a **semicolon**-separated
+list of options - not comma-separated like `@HIDECHOICE` - because one of the options (`priority-codes`) needs its
+own comma-separated list of codes, and a plain comma-separated option list would make that ambiguous to split.
+Options are combined in one tag:
+```text
+@ONTOLOGY-OPTIONS='return-all;code-template=${CODE};priority-codes=code1,code2'
+```
+Unrecognized options (or the whole tag being malformed) are silently ignored, rather than causing an error - a
+mistyped option just means that option doesn't apply, not a broken field.
+
+  * ***return-all*** - Without this option, every autocomplete search sends the typed text to the FHIR server as a
+    filter, so nothing appears unless the typed text happens to textually match the server's `display` wording for
+    an entry. For a small, fully-enumerated answer-list ValueSet (a handful of values, e.g. a frequency-of-use
+    scale), this makes it hard to actually browse the options. With `return-all` set, the field's search instead
+    fetches the ValueSet's full/default expansion (no server-side text filter) and ranks entries locally - anything
+    whose code or display matches the typed text sorts first, everything else follows. **This option is intended
+    for small ValueSets only.** It fetches the entire expansion on every search keystroke rather than a filtered
+    subset, so setting it on a large ValueSet (SNOMED CT, etc.) would be slow and wasteful.
+  * ***code-template*** - Overrides the format of the value stored in REDCap for this field, the same way
+    `advanced_fhir_ontology_provider`'s per-category `Code Template` setting does. Without this option, the stored
+    value is `${CODE}|${SYSTEM}` (unchanged from previous versions of this module). The template replaces
+    `${CODE}` and `${SYSTEM}` with the values returned from the FHIR terminology server; `${DISPLAY}` is not
+    supported here (unlike `advanced_fhir_ontology_provider`, this module doesn't template the displayed label,
+    only the stored value). Some FHIR ValueSets are composed of values from multiple code systems, making the code
+    + system required for a unique coding - **if the ValueSet used on this field only contains values from a
+    single code system, `code-template=${CODE}` can be used to store just the bare code.** Using a code-only
+    template on a ValueSet that does span multiple code systems risks two different real answers colliding under
+    the same stored value (whichever one is returned last in a given search silently overwrites the other in that
+    search's results), and also means REDCap's own web-service label cache (keyed by the stored value) can show
+    the wrong cached label for a later record that picked the other system's entry with the same code. This is the
+    same trade-off `advanced_fhir_ontology_provider`'s admins already accept for its `Code Template` setting - only
+    use `code-template=${CODE}` when you know the field's ValueSet doesn't have colliding codes across systems.
+  * ***priority-codes*** - A comma-separated list of codes that should sort to the top of a field's search results
+    whenever they appear among them, in the order listed (matching only the FHIR code, not the system - same as
+    `@HIDECHOICE` above). A code listed in both `@HIDECHOICE` and `priority-codes` is excluded entirely; hiding a
+    choice always takes priority over prioritizing it.
 
 
 ### Label Cache Issue

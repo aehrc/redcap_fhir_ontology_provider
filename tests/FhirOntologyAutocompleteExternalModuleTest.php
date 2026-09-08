@@ -260,6 +260,265 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertArrayHasKey('C2|sys', $results);
     }
 
+    // --- searchOntology() @ONTOLOGY-OPTIONS ---------------------------------
+    // Existing searchOntology() tests above (e.g.
+    // testSearchOntologySkipsEntriesWithNoCodeAndDefaultsMissingDisplayToCode)
+    // run with no @ONTOLOGY-OPTIONS tag and already assert the exact
+    // "code|system" stored format - they double as the regression guard that
+    // the code-template default is byte-identical to the old hardcoded
+    // $code . "|" . $system.
+
+    public function testSearchOntologyReturnAllOmitsFilterAndRanksMatchesFirst(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'chips_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['chips_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='return-all'"];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Never'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Rarely'],
+                    ['code' => 'C3', 'system' => 'sys', 'display' => 'Weekly'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', 'week', 20);
+
+        $this->assertStringNotContainsString('filter=', FakeHttpTransport::$calls[0]['url']);
+        // 'week' only matches "Weekly" - it must sort first despite not being
+        // the first entry the server returned, with the rest keeping their
+        // original relative order after it.
+        $this->assertSame(['C3|sys', 'C1|sys', 'C2|sys'], array_keys($results));
+    }
+
+    public function testSearchOntologyReturnAllWithEmptySearchTermKeepsServerOrder(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'chips_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['chips_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='return-all'"];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Never'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Rarely'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', '', 20);
+
+        $this->assertSame(['C1|sys', 'C2|sys'], array_keys($results));
+    }
+
+    public function testSearchOntologyCodeTemplateOverridesStoredFormat(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'bare_code_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['bare_code_field'] = ['field_annotation' => '@ONTOLOGY-OPTIONS=\'code-template=${CODE}\''];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Never'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', 'never', 20);
+
+        // Bare code, no system suffix - and the displayed label is unaffected.
+        $this->assertSame(['C1' => 'Never'], $results);
+    }
+
+    public function testSearchOntologyPriorityCodesRequestsExtraHeadroomAndSortsPriorityFirst(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'priority_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['priority_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='priority-codes=C3,C1'"];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'One'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Two'],
+                    ['code' => 'C3', 'system' => 'sys', 'display' => 'Three'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', 'term', 20);
+
+        $this->assertStringContainsString('count=22', FakeHttpTransport::$calls[0]['url'], '20 + 2 priority codes');
+        // Listed order is C3 then C1 - priority entries sort in that order, non-priority C2 last.
+        $this->assertSame(['C3|sys', 'C1|sys', 'C2|sys'], array_keys($results));
+    }
+
+    public function testSearchOntologyReturnAllAndPriorityCodesCombinedPriorityWins(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'combo_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['combo_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='return-all;priority-codes=C2'"];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Weekly'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Monthly'],
+                ],
+            ],
+        ]);
+
+        // Search term matches C1's display ("Weekly") but C2 is the priority code.
+        $results = $this->module->searchOntology('http://example.test/vs', 'week', 20);
+
+        // Priority (C2) must still sort first, even though it doesn't match the term.
+        $this->assertSame(['C2|sys', 'C1|sys'], array_keys($results));
+    }
+
+    public function testSearchOntologyHideChoiceExcludesEvenWhenReturnAllSet(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'hide_and_options_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['hide_and_options_field'] = [
+            'field_annotation' => "@HIDECHOICE='C1' @ONTOLOGY-OPTIONS='return-all'",
+        ];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Hidden'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Shown'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', 'nomatch', 20);
+
+        $this->assertArrayNotHasKey('C1|sys', $results);
+        $this->assertArrayHasKey('C2|sys', $results);
+    }
+
+    public function testSearchOntologyHideChoiceExcludesEvenWhenAlsoListedAsPriority(): void
+    {
+        // A code that is both hidden and priority-listed is excluded entirely -
+        // the hide-choice check runs before an entry is even a ranking
+        // candidate, so priority-codes never gets a chance to act on it.
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'hide_and_priority_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['hide_and_priority_field'] = [
+            'field_annotation' => "@HIDECHOICE='X' @ONTOLOGY-OPTIONS='priority-codes=X,Y'",
+        ];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'X', 'system' => 'sys', 'display' => 'Hidden and priority'],
+                    ['code' => 'Y', 'system' => 'sys', 'display' => 'Priority only'],
+                    ['code' => 'Z', 'system' => 'sys', 'display' => 'Neither'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', 'term', 20);
+
+        $this->assertArrayNotHasKey('X|sys', $results, 'hidden even though also listed as priority');
+        // Y is still prioritized normally, ahead of non-priority Z.
+        $this->assertSame(['Y|sys', 'Z|sys'], array_keys($results));
+    }
+
+    public function testSearchOntologyMalformedOntologyOptionsIgnoredWithoutError(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'malformed_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['malformed_field'] = [
+            'field_annotation' => "@ONTOLOGY-OPTIONS='not-a-real-option;;also-bogus=1'",
+        ];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'One'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', 'term', 20);
+
+        // No crash, and default (filter sent, ${CODE}|${SYSTEM} format) behavior.
+        $this->assertStringContainsString('filter=term', FakeHttpTransport::$calls[0]['url']);
+        $this->assertSame(['C1|sys' => 'One'], $results);
+    }
+
+    // --- getSearchOptions() / @ONTOLOGY-OPTIONS parsing ---------------------
+
+    public function testGetSearchOptionsDefaultsWhenNoTag(): void
+    {
+        $_GET['field'] = 'plain_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->metadata['plain_field'] = ['field_annotation' => null];
+
+        $options = $this->module->getSearchOptions();
+
+        $this->assertSame(['return-all' => false, 'code-template' => null, 'priority-codes' => []], $options);
+    }
+
+    public function testGetSearchOptionsParsesAllThreeOptions(): void
+    {
+        $_GET['field'] = 'my_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->metadata['my_field'] = [
+            'field_annotation' => '@ONTOLOGY-OPTIONS=\'return-all;code-template=${CODE};priority-codes=A, B\'',
+        ];
+
+        $options = $this->module->getSearchOptions();
+
+        $this->assertTrue($options['return-all']);
+        $this->assertSame('${CODE}', $options['code-template']);
+        $this->assertSame(['A', 'B'], $options['priority-codes']);
+    }
+
+    public function testGetSearchOptionsIgnoresUnrecognizedTokensAndKeys(): void
+    {
+        $_GET['field'] = 'my_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->metadata['my_field'] = [
+            'field_annotation' => "@ONTOLOGY-OPTIONS='bogus-flag;unknown-key=value;return-all'",
+        ];
+
+        $options = $this->module->getSearchOptions();
+
+        $this->assertTrue($options['return-all']);
+        $this->assertNull($options['code-template']);
+        $this->assertSame([], $options['priority-codes']);
+    }
+
+    public function testGetSearchOptionsMergesMultipleTagOccurrences(): void
+    {
+        // Mirrors @HIDECHOICE's own tolerance for appearing more than once in
+        // an annotation (see its while-loop over PREG_OFFSET_CAPTURE matches).
+        $_GET['field'] = 'my_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->metadata['my_field'] = [
+            'field_annotation' => "@ONTOLOGY-OPTIONS='return-all' @ONTOLOGY-OPTIONS='priority-codes=A'",
+        ];
+
+        $options = $this->module->getSearchOptions();
+
+        $this->assertTrue($options['return-all']);
+        $this->assertSame(['A'], $options['priority-codes']);
+    }
+
     // --- getHideChoice() ---
     // Regression coverage: $Proj must be pulled in via `global $Proj` or the
     // in-memory fast path never runs and every keystroke falls through to a
