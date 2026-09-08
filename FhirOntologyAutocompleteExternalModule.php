@@ -499,8 +499,8 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
     <hr style="border:none;border-top:1px solid #bbb;margin:14px 0;">
 
     <div style="text-align:right;">
-      <button id="fhir_valueset_apply" class="ui-button ui-widget ui-corner-all">Use this ValueSet</button>
-      <button id="fhir_valueset_cancel" class="ui-button ui-widget ui-corner-all">Cancel</button>
+      <button type="button" id="fhir_valueset_apply" class="ui-button ui-widget ui-corner-all">Use this ValueSet</button>
+      <button type="button" id="fhir_valueset_cancel" class="ui-button ui-widget ui-corner-all">Cancel</button>
     </div>
   </div>
 </div>

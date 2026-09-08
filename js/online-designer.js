@@ -33,6 +33,15 @@ var fhirOntologyModuleObject;
 var valuesetNameCache = {};
 
 /**
+ * Non-null exactly while a get-valueset-info preview is in flight for this
+ * URL (set synchronously when the request starts, cleared once it settles -
+ * see showValuesetDetails()) - lets applyValuesetSelection() refuse to
+ * commit a value whose preview hasn't actually come back yet, not just one
+ * that's already known to have failed.
+ */
+var pendingPreviewUrl = null;
+
+/**
  * Required callback REDCap core looks up by name (OntologyManager's
  * notifyOntologyProviders(), called from its own update_ontology_selection())
  * both when this provider's own selection is applied, and - critically - when
@@ -70,14 +79,18 @@ function FHIR_ontology_changed(service, category) {
   }).catch(function () {});
 }
 
-function renderValuesetError(message) {
-  // build via DOM - the message may echo text a project designer typed as the
-  // valueset id/url, so it must never be concatenated into markup
+function clearValuesetDetailFields() {
   $('#fhirValueSet_name').text('');
   $('#fhirValueSet_version').text('');
   $('#fhirValueSet_status').text('');
   $('#fhirValueSet_expansion_count').text('');
   $('#fhirValueSet_contains').empty();
+}
+
+function renderValuesetError(message) {
+  clearValuesetDetailFields();
+  // build via DOM - the message may echo text a project designer typed as the
+  // valueset id/url, so it must never be concatenated into markup
   var $errorCell = $('<td>').addClass('data').attr('colspan', '3').text(message);
   $('#fhirValueSet_contains').append($('<tr>').addClass('error').append($errorCell));
 }
@@ -86,7 +99,10 @@ function renderValuesetDetails(data) {
   $('#fhirValueSet_name').text(data.name || '');
   $('#fhirValueSet_version').text(data.version || '');
   $('#fhirValueSet_status').text(data.status || '');
-  $('#fhirValueSet_expansion_count').text((data.expansion && data.expansion.total) || '');
+  // expansion.total is a legitimate 0 for a genuinely empty expansion, which
+  // `(data.expansion && data.expansion.total) || ''` would wrongly blank out.
+  var total = data.expansion ? data.expansion.total : undefined;
+  $('#fhirValueSet_expansion_count').text(typeof total === 'number' ? total : '');
   $('#fhirValueSet_contains').empty();
   if (data.expansion && data.expansion.contains) {
     for (var v of data.expansion.contains) {
@@ -114,17 +130,22 @@ function renderValuesetDetails(data) {
  */
 function showValuesetDetails(valueSetUrl) {
   $('#fhirValueSet_url').text(valueSetUrl || '');
-  $('#fhirValueSet_name').text('');
-  $('#fhirValueSet_version').text('');
-  $('#fhirValueSet_status').text('');
-  $('#fhirValueSet_expansion_count').text('');
-  $('#fhirValueSet_contains').empty();
+  clearValuesetDetailFields();
 
   if (!valueSetUrl) {
+    pendingPreviewUrl = null;
     return;
   }
 
+  // Set synchronously, before the request goes out, so applyValuesetSelection()
+  // can never observe a moment where this URL's preview looks neither pending
+  // nor failed just because the response hasn't arrived yet.
+  pendingPreviewUrl = valueSetUrl;
+
   fhirOntologyModuleObject.ajax('get-valueset-info', {valueSet: valueSetUrl}).then(function (data) {
+    if (pendingPreviewUrl === valueSetUrl) {
+      pendingPreviewUrl = null;
+    }
     // Guard against a stale response: the user may have already picked a
     // different result or typed a different URL by the time this resolves,
     // in which case this response is no longer about what's on screen.
@@ -141,6 +162,9 @@ function showValuesetDetails(valueSetUrl) {
       valuesetNameCache[valueSetUrl] = data.name;
     }
   }).catch(function (error) {
+    if (pendingPreviewUrl === valueSetUrl) {
+      pendingPreviewUrl = null;
+    }
     if ($('#fhir_value_set_url').val() !== valueSetUrl) {
       return;
     }
@@ -180,7 +204,12 @@ function applyValuesetSelection(event) {
   // don't silently commit it anyway. Leave the dialog open so that error
   // stays visible, rather than closing over it.
   var previewFailed = $('#fhirValueSet_url').text() === selected && $('#fhirValueSet_contains tr.error').length > 0;
-  if (!selected || previewFailed) {
+  // Also refuse while that same preview is still in flight (e.g. the user
+  // typed a URL and clicked Apply before its get-valueset-info request even
+  // returned) - otherwise an unverified value could slip through simply
+  // because no error row exists *yet*.
+  var previewPending = selected === pendingPreviewUrl;
+  if (!selected || previewFailed || previewPending) {
     return false;
   }
   update_ontology_selection('FHIR', selected);
