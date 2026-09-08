@@ -19,6 +19,15 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### Online Designer ontology picker now uses REDCap's module.ajax()
+
+- ***`FindValueSetService` page removed***
+The Online Designer's ontology search and "Show Details" lookup used to call a standalone module page,
+`FindValueSetService.php`, directly from hand-written `$.ajax()` calls. That page is gone; the same two lookups
+(`find-valueset`, `get-valueset-info`) are now served through REDCap's own JavaScript Module Object
+(`window.<module>.ajax(...)`, declared in `config.json`'s `auth-ajax-actions`), which handles authentication and
+CSRF internally rather than the module managing a raw page URL and token by hand. No user-visible behavior change.
+
 ### Credential masking in the configuration page
 
 - ***Credential fields now masked in the configuration page***
@@ -144,7 +153,7 @@ Once enabled the online designer will have a new ontology source available. If s
 
 -Search For valuset using: (dropdown with the options)
  - ValueSet Name - searching using the name of the valueset
- - By CodeSystem - searching using the name of the codesystem
+ - By CodeSystem - searching using the title of the codesystem
  - SNOMED CT Refset - search for a SNOMED CT Refset
  - SNOMED CT isa implicit valueset - search for a SNOMED CT concept and use the valueset composed of it and its children
  - LOINC implicit answer set - search for a LOINC implicit answer set

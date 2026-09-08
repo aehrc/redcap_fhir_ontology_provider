@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Separate from phpunit.xml deliberately: PHPUnit's <bootstrap> is one script
+    for the whole run, and these tests need real http_get()/http_post() (see
+    tests/system/bootstrap.php) instead of the unit suite's fakes. Run via
+    `vendor/bin/phpunit -c phpunit.system.xml` - never picked up by a bare
+    `vendor/bin/phpunit` call, which uses phpunit.xml by default.
+-->
+<phpunit
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+    bootstrap="tests/system/bootstrap.php"
+    colors="true"
+>
+    <testsuites>
+        <testsuite name="system">
+            <directory>tests/system</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

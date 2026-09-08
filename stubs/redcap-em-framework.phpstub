@@ -20,7 +20,8 @@ namespace ExternalModules {
         /** @psalm-taint-sink sql $sql */
         public function query($sql, $params) {}
 
-        public function getUrl($path, $noAuth = false, $useApiEndpoint = false) {}
+        public function initializeJavascriptModuleObject() {}
+        public function getJavascriptModuleObjectName() {}
     }
 
     class ExternalModules {}

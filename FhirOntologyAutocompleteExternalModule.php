@@ -114,9 +114,68 @@ EOD;
         }
     }
 
+    /**
+     * Backs the Online Designer's ontology-picker JS (getOnlineDesignerSection()),
+     * called via the JavaScript Module Object's ajax() method - see config.json's
+     * auth-ajax-actions. This is the only caller for both actions; there is no
+     * public REDCap-facing API contract here to keep stable beyond that.
+     *
+     * A returned array becomes a normal resolved payload on the JS side, not a
+     * rejection - including the {error: "..."} shape, which is how a domain-level
+     * failure (breaker open, transport failure, malformed FHIR response) is
+     * signalled to the two .then() handlers in getOnlineDesignerSection(). A
+     * thrown exception (none here) would instead reject the JS promise.
+     */
+    public function redcap_module_ajax($action, $payload, $project_id)
+    {
+        $payload = is_array($payload) ? $payload : [];
+
+        if ($action === 'find-valueset') {
+            $type = isset($payload['type']) ? $payload['type'] : null;
+            $query = isset($payload['query']) ? $payload['query'] : null;
+            if ($type === null || $query === null) {
+                return ['error' => 'Missing required parameter "type" or "query".'];
+            }
+            if (!$this->isValidValuesetQueryType($type)) {
+                return ['error' => "Unknown find type '{$type}'."];
+            }
+            return $this->findValueSet($type, $query);
+        }
+
+        if ($action === 'get-valueset-info') {
+            $valueSet = isset($payload['valueSet']) ? $payload['valueSet'] : null;
+            if ($valueSet === null) {
+                return ['error' => 'Missing required parameter "valueSet".'];
+            }
+            $info = $this->getValueSetInfo($valueSet);
+            if ($info === false) {
+                // Breaker open, or the server did not answer.
+                return ['error' => 'The terminology server is not responding. Please try again shortly.'];
+            }
+            $decoded = json_decode($info, true);
+            if (!is_array($decoded)) {
+                return ['error' => 'The terminology server returned an unparseable response.'];
+            }
+            return $decoded;
+        }
+
+        return ['error' => 'Unknown action.'];
+    }
+
 
     public function validateSettings($settings)
     {
+        // Every setting this module declares is system-level (config.json has no
+        // "project-settings" key at all), so a project-scope Configure dialog save
+        // calls this with none of them present in $settings. Previously this fell
+        // through to an unconditional httpGet($settings['fhir_api_url'] . '/metadata', ...)
+        // with an undefined/empty fhir_api_url, which always failed and surfaced
+        // "Failed to get metadata for fhir server at ''" on every project-level
+        // save - there is nothing to validate at that scope, so return early.
+        if (!array_key_exists('fhir_api_url', $settings)) {
+            return '';
+        }
+
         $errors = '';
 
         $rnr = $settings['return_no_result'];
@@ -388,7 +447,23 @@ EOD;
     public function getOnlineDesignerSection()
     {
 
-        $findValueSetService_url = $this->getUrl('FindValueSetService.php', false, true);
+        // initializeJavascriptModuleObject() prints (does not return) a <script>
+        // block that sets up window.<jsObjectName>.ajax(), which POSTs to the
+        // framework's own module-ajax endpoint with CSRF/verification handled
+        // internally - this replaces both the hand-rolled $.ajax() calls this
+        // method used to make directly to FindValueSetService.php (a plain
+        // module page, which is why framework 16's CSRF requirement had to be
+        // solved by hand here previously) and that file entirely; the same
+        // logic now lives in redcap_module_ajax() below, reached via the
+        // 'find-valueset'/'get-valueset-info' actions declared in config.json's
+        // auth-ajax-actions. Captured via output buffering so it can be
+        // returned as part of this method's own HTML fragment rather than
+        // printed immediately (out of order relative to the rest of the page).
+        ob_start();
+        $this->initializeJavascriptModuleObject();
+        $moduleObjectScript = ob_get_clean();
+        $jsObjectName = $this->getJavascriptModuleObjectName();
+
         $loincSupport = $this->hasLoincSupport();
         $implicitSearchOptions = '';
         if ($this->hasSnomedSupport()){
@@ -445,6 +520,18 @@ EOD;
 
   JSON_STRING.prototype.toString = function(){return JSON.stringify(this.data)};
 
+  function renderValuesetError(message){
+    // build via DOM - the message may echo text a project designer typed as the
+    // valueset id/url, so it must never be concatenated into markup
+    $('#fhirValueSet_name').text('');
+    $('#fhirValueSet_version').text('');
+    $('#fhirValueSet_status').text('');
+    $('#fhirValueSet_expansion_count').text('');
+    var errorCell = $('<td>').addClass('data').attr('colspan', '3');
+    errorCell.append(document.createTextNode(message));
+    $('#fhirValueSet_contains').append($('<tr>').addClass('error').append(errorCell));
+  }
+
   function show_selected_valueset(event){
         selected_valueset = $('#fhir_valueset_search_code').text();
         if (selected_valueset === ''){
@@ -458,58 +545,36 @@ EOD;
           $('#fhirValueSet_expansion_count').text('');
           $('#fhirValueSet_contains').empty();
 
-          $.ajax( {
-            type: "POST",
-            url: '{$findValueSetService_url}',
-            processData: true,
-            data: {action: 'info', valueSet: selected_valueset},
-            contentType: 'application/x-www-form-urlencoded',
-            dataType: "json",
-            success: function(data){
-              if (data.url) $('#fhirValueSet_url').text(data.url);
-              if (data.name) $('#fhirValueSet_name').text(data.name);
-              if (data.version) $('#fhirValueSet_version').text(data.version);
-              if (data.status) $('#fhirValueSet_status').text(data.status);
-              if (data.expansion && data.expansion.total) $('#fhirValueSet_expansion_count').text(data.expansion.total);
-              if (data.expansion && data.expansion.contains){
-                for (v of data.expansion.contains){
-                  // build via DOM so server supplied text can never be parsed as markup
-                  var row = $('<tr>');
-                  row.append($('<td>').addClass('data').text(v.display));
-                  row.append($('<td>').addClass('data').text(v.code));
-                  row.append($('<td>').addClass('data').text(v.system));
-                  $('#fhirValueSet_contains').append(row);
-                }
-              }
-            },
-            error: function (xhr, status, errorThrown) {
+          // redcap_module_ajax()'s 'get-valueset-info' action returns either the
+          // parsed FHIR ValueSet resource, or {error: "..."} for a domain-level
+          // failure (breaker open, transport failure, malformed response) -
+          // that's a normal resolved payload, not a rejection (module.ajax()
+          // only rejects for a framework-level failure, e.g. verification).
+          {$jsObjectName}.ajax('get-valueset-info', {valueSet: selected_valueset}).then(function(data){
+            if (data && data.error){
               $('#fhirValueSet_url').text(selected_valueset);
-              $('#fhirValueSet_name').text('');
-              $('#fhirValueSet_version').text('');
-              $('#fhirValueSet_status').text('');
-              $('#fhirValueSet_expansion_count').text('');
-
-              // we are expecting a json response
-              var errorObject;
-              try {
-                errorObject = JSON.parse(xhr.responseText);
-              }
-              catch (e){
-                // not json
-              }
-              // build via DOM - diagnostics echoes back text the user supplied as the
-              // valueset url, so it must never be concatenated into markup
-              var errorCell = $('<td>').addClass('data').attr('colspan', '3');
-              errorCell.append(document.createTextNode("Failed to load Valueset - Status : " + xhr.status));
-              if (errorObject && errorObject.issue){
-                for (issue of errorObject.issue){
-                  errorCell.append($('<br>'));
-                  errorCell.append(document.createTextNode(issue.severity + " : " + issue.diagnostics));
-                }
-              }
-              $('#fhirValueSet_contains').append($('<tr>').addClass('error').append(errorCell));
+              renderValuesetError(data.error);
+              return;
             }
-          } );
+            if (data.url) $('#fhirValueSet_url').text(data.url);
+            if (data.name) $('#fhirValueSet_name').text(data.name);
+            if (data.version) $('#fhirValueSet_version').text(data.version);
+            if (data.status) $('#fhirValueSet_status').text(data.status);
+            if (data.expansion && data.expansion.total) $('#fhirValueSet_expansion_count').text(data.expansion.total);
+            if (data.expansion && data.expansion.contains){
+              for (v of data.expansion.contains){
+                // build via DOM so server supplied text can never be parsed as markup
+                var row = $('<tr>');
+                row.append($('<td>').addClass('data').text(v.display));
+                row.append($('<td>').addClass('data').text(v.code));
+                row.append($('<td>').addClass('data').text(v.system));
+                $('#fhirValueSet_contains').append(row);
+              }
+            }
+          }).catch(function(error){
+            $('#fhirValueSet_url').text(selected_valueset);
+            renderValuesetError(typeof error === 'string' ? error : 'The request could not be completed.');
+          });
           $('#fhir_valueset_dialog').dialog('open');
         }
         event.preventDefault();
@@ -522,27 +587,23 @@ EOD;
     $("#fhir_valueset_search").autocomplete({
         source: function (request, response) {
             let search_type = $('#fhir_valueset_search_type').val();
-            let params = {action: 'find', query: request.term, type: search_type};
-            let processFunction = function (data) {
+            // findValueSet()'s success shape is a plain array of {label, value};
+            // {error: "..."} (breaker open, transport failure, unknown type) and a
+            // framework-level rejection are both treated as "no matches" here -
+            // there's no result list UI in this widget to show an error in.
+            {$jsObjectName}.ajax('find-valueset', {query: request.term, type: search_type}).then(function(data){
                 let result = [];
-                for (let v of data) {
-                    result.push({'label': v.label, 'value': v.value});
+                if (Array.isArray(data)) {
+                    for (let v of data) {
+                        result.push({'label': v.label, 'value': v.value});
+                    }
                 }
                 if (!result.length) {
                     result.push({'label': 'No matches found', 'value': '__NMF__'});
                 }
-
                 response(result);
-            };
-
-            $.ajax({
-                type: 'POST',
-                url: '{$findValueSetService_url}',
-                processData: true,
-                data: params,
-                contentType: 'application/x-www-form-urlencoded',
-                dataType: "json",
-                success: processFunction
+            }).catch(function(){
+                response([{'label': 'No matches found', 'value': '__NMF__'}]);
             });
         },
         select: function (event, ui) {
@@ -625,7 +686,7 @@ EOD;
    </div>
 </div>
 EOD;
-        return $onlineDesignerHtml;
+        return $moduleObjectScript . $onlineDesignerHtml;
     }
 
 
