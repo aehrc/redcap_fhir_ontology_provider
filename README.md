@@ -44,6 +44,11 @@ A new `@ONTOLOGY-OPTIONS` action tag lets a project designer opt an individual f
 small answer-list ValueSet without needing to guess its exact wording), `code-template` (override the stored
 value's format), and `priority-codes` (push specific codes to the top of results) - see
 [@ONTOLOGY-OPTIONS support](#ontology-options-support) below for the full syntax and worked examples.
+- ***The Online Designer's "Select FHIR ValueSet" dialog now suggests it automatically***
+When a previewed ValueSet is small (20 entries or fewer) and/or confirmed to use only one code system - either a
+known single-system shape (a SNOMED CT implicit valueset, or a LOINC implicit answer list) or every entry actually
+returned - the dialog shows a suggested `@ONTOLOGY-OPTIONS` tag with a "Copy" button, ready to paste into the
+field's own Action Tags / Field Annotation box.
 
 ### Online Designer ontology picker now uses REDCap's module.ajax()
 

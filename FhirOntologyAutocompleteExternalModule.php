@@ -621,6 +621,12 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 	    <label for="fhirValueSet_expansion_count">Expansion Count:</label>
 	    <span id="fhirValueSet_expansion_count"></span>
 	   </div>
+      <div id="fhir_ontology_recommendation" style="display:none;margin:10px 0;padding:8px;background:#f5f5f5;border-radius:4px;">
+        <div id="fhir_ontology_recommendation_text" style="margin-bottom:6px;"></div>
+        <code id="fhir_ontology_recommendation_tag" style="background:#fff;padding:2px 6px;border-radius:3px;"></code>
+        <button type="button" id="fhir_ontology_recommendation_copy" class="ui-button ui-widget ui-corner-all">Copy</button>
+        <span id="fhir_ontology_recommendation_copy_feedback" style="color:#888;margin-left:4px;"></span>
+      </div>
       <div style="max-height:220px;overflow-y:auto;">
         <table class="table table-stripped">
 			<thead>
