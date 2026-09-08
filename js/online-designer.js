@@ -1,8 +1,10 @@
 /**
- * Online Designer ontology-picker UI for the FHIR ontology provider: lets a
- * project designer search for a FHIR ValueSet (by name, CodeSystem title, or
- * a SNOMED CT/LOINC implicit valueset) and inspect its details before
- * assigning it to a field.
+ * Online Designer ontology-picker UI for the FHIR ontology provider: shows a
+ * compact summary of the field's currently selected FHIR ValueSet, with a
+ * "Change..." control that opens a single popup dialog for searching (by
+ * name, CodeSystem title, or a SNOMED CT/LOINC implicit valueset), entering a
+ * ValueSet URL directly, inspecting its details, and applying it to the
+ * field.
  *
  * Self-initializes from the wrapper element's data-module-object attribute -
  * the JavaScript Module Object's dotted path (from
@@ -22,108 +24,142 @@ function resolveGlobalByPath(path) {
 /** Set once, from data-module-object, when the wrapper element is found on DOMReady. */
 var fhirOntologyModuleObject;
 
-function FHIR_ontology_changed(service, category){
-  if ('FHIR' !== service){
-    $('#fhir_valueset_search_type').val('');
-    $('#fhir_valueset_search').val('');
-    $('#fhir_valueset_search_code').text('');
-    $('#fhir_value_set').val('');
+/**
+ * Required callback REDCap core looks up by name (OntologyManager's
+ * notifyOntologyProviders(), called from its own update_ontology_selection())
+ * both when this provider's own selection is applied, and - critically - when
+ * the field editor first opens for an already-configured field and core
+ * seeds #ontology_auto_suggest from the field's saved element_enum. That
+ * second case is the only hook this provider gets for "here's what's already
+ * saved", so this must stay a plain global function core can find by name.
+ */
+function FHIR_ontology_changed(service, category) {
+  if ('FHIR' !== service) {
+    $('#fhir_selected_valueset').val('');
+    $('#fhir_selected_valueset_label').text('No ValueSet selected');
+    return;
   }
-  else {
-    $('#fhir_value_set').val(category);
+  $('#fhir_selected_valueset').val(category);
+  $('#fhir_selected_valueset_label').text(category || 'No ValueSet selected');
+  if (!category || !fhirOntologyModuleObject) {
+    return;
   }
+  // Best-effort: resolve a human-readable name for display. A failure here is
+  // silent - the raw URL already shown above is a valid, if less friendly, label.
+  // Guard against the selection having moved on by the time this resolves.
+  fhirOntologyModuleObject.ajax('get-valueset-info', {valueSet: category}).then(function (data) {
+    if (data && !data.error && data.name && $('#fhir_selected_valueset').val() === category) {
+      $('#fhir_selected_valueset_label').text(data.name);
+    }
+  }).catch(function () {});
 }
 
-function fhir_update_search_selection(selectedValue){
-      $('#fhir_valueset_search').val('');
-      $('#fhir_valueset_search_code').text('');
-}
-
-function move_selected_valueset(event){
-      selected_valueset = $('#fhir_valueset_search_code').text();
-      if (selected_valueset){
-        $('#fhir_value_set').val(selected_valueset);
-        update_ontology_selection('FHIR', selected_valueset);
-      }
-      event.preventDefault();
-      return false;
-}
-
-function manual_valuset_update(event){
-      selected_valueset = $('#fhir_value_set').val();
-      if (selected_valueset){
-        update_ontology_selection('FHIR', selected_valueset);
-      }
-}
-
-
-function JSON_STRING(data){
-  this.data = data;
-}
-
-JSON_STRING.prototype.toString = function(){return JSON.stringify(this.data)};
-
-function renderValuesetError(message){
+function renderValuesetError(message) {
   // build via DOM - the message may echo text a project designer typed as the
   // valueset id/url, so it must never be concatenated into markup
   $('#fhirValueSet_name').text('');
   $('#fhirValueSet_version').text('');
   $('#fhirValueSet_status').text('');
   $('#fhirValueSet_expansion_count').text('');
+  $('#fhirValueSet_contains').empty();
   var $errorCell = $('<td>').addClass('data').attr('colspan', '3').text(message);
   $('#fhirValueSet_contains').append($('<tr>').addClass('error').append($errorCell));
 }
 
-function show_selected_valueset(event){
-      selected_valueset = $('#fhir_valueset_search_code').text();
-      if (selected_valueset === ''){
-        selected_valueset = $('#fhir_value_set').val();
-      }
-      if (selected_valueset){
-        $('#fhirValueSet_url').text('');
-        $('#fhirValueSet_name').text('');
-        $('#fhirValueSet_version').text('');
-        $('#fhirValueSet_status').text('');
-        $('#fhirValueSet_expansion_count').text('');
-        $('#fhirValueSet_contains').empty();
-
-        // redcap_module_ajax()'s 'get-valueset-info' action returns either the
-        // parsed FHIR ValueSet resource, or {error: "..."} for a domain-level
-        // failure (breaker open, transport failure, malformed response) -
-        // that's a normal resolved payload, not a rejection (module.ajax()
-        // only rejects for a framework-level failure, e.g. verification).
-        fhirOntologyModuleObject.ajax('get-valueset-info', {valueSet: selected_valueset}).then(function(data){
-          if (data && data.error){
-            $('#fhirValueSet_url').text(selected_valueset);
-            renderValuesetError(data.error);
-            return;
-          }
-          if (data.url) $('#fhirValueSet_url').text(data.url);
-          if (data.name) $('#fhirValueSet_name').text(data.name);
-          if (data.version) $('#fhirValueSet_version').text(data.version);
-          if (data.status) $('#fhirValueSet_status').text(data.status);
-          if (data.expansion && data.expansion.total) $('#fhirValueSet_expansion_count').text(data.expansion.total);
-          if (data.expansion && data.expansion.contains){
-            for (v of data.expansion.contains){
-              // build via DOM so server supplied text can never be parsed as markup
-              var $row = $('<tr>');
-              $row.append($('<td>').addClass('data').text(v.display));
-              $row.append($('<td>').addClass('data').text(v.code));
-              $row.append($('<td>').addClass('data').text(v.system));
-              $('#fhirValueSet_contains').append($row);
-            }
-          }
-        }).catch(function(error){
-          $('#fhirValueSet_url').text(selected_valueset);
-          renderValuesetError(typeof error === 'string' ? error : 'The request could not be completed.');
-        });
-        $('#fhir_valueset_dialog').dialog('open');
-      }
-      event.preventDefault();
-      return false;
+function renderValuesetDetails(data) {
+  $('#fhirValueSet_name').text(data.name || '');
+  $('#fhirValueSet_version').text(data.version || '');
+  $('#fhirValueSet_status').text(data.status || '');
+  $('#fhirValueSet_expansion_count').text((data.expansion && data.expansion.total) || '');
+  $('#fhirValueSet_contains').empty();
+  if (data.expansion && data.expansion.contains) {
+    for (var v of data.expansion.contains) {
+      // build via DOM so server supplied text can never be parsed as markup
+      var $row = $('<tr>');
+      $row.append($('<td>').addClass('data').text(v.display));
+      $row.append($('<td>').addClass('data').text(v.code));
+      $row.append($('<td>').addClass('data').text(v.system));
+      $('#fhirValueSet_contains').append($row);
+    }
+  }
 }
 
+/**
+ * Fetches and displays details for valueSetUrl inside the dialog, without
+ * touching the committed selection (#fhir_selected_valueset). Backs both
+ * "pick a search result" and "type a URL directly", neither of which commits
+ * anything until "Use this ValueSet" is clicked.
+ *
+ * get-valueset-info's success shape is either the parsed FHIR ValueSet
+ * resource, or {error: "..."} for a domain-level failure (breaker open,
+ * transport failure, malformed response) - that's a normal resolved payload,
+ * not a rejection (module.ajax() only rejects for a framework-level failure,
+ * e.g. verification).
+ */
+function showValuesetDetails(valueSetUrl) {
+  $('#fhirValueSet_url').text(valueSetUrl || '');
+  $('#fhirValueSet_name').text('');
+  $('#fhirValueSet_version').text('');
+  $('#fhirValueSet_status').text('');
+  $('#fhirValueSet_expansion_count').text('');
+  $('#fhirValueSet_contains').empty();
 
+  if (!valueSetUrl) {
+    return;
+  }
+
+  fhirOntologyModuleObject.ajax('get-valueset-info', {valueSet: valueSetUrl}).then(function (data) {
+    if (data && data.error) {
+      renderValuesetError(data.error);
+      return;
+    }
+    if (data.url) $('#fhirValueSet_url').text(data.url);
+    renderValuesetDetails(data);
+  }).catch(function (error) {
+    renderValuesetError(typeof error === 'string' ? error : 'The request could not be completed.');
+  });
+}
+
+function openChangeDialog(event) {
+  var current = $('#fhir_selected_valueset').val();
+  $('#fhir_valueset_search_type').val('');
+  $('#fhir_valueset_search').val('');
+  $('#fhir_value_set_url').val(current);
+  showValuesetDetails(current);
+  $('#fhir_valueset_dialog').dialog('open');
+  if (event) {
+    event.preventDefault();
+  }
+  return false;
+}
+
+/**
+ * The only place this module calls update_ontology_selection() - REDCap
+ * core's own function, which sets #ontology_auto_suggest (the value actually
+ * saved with the field) and, via notifyOntologyProviders(), immediately calls
+ * FHIR_ontology_changed('FHIR', selected) back on this provider. That in turn
+ * is what updates #fhir_selected_valueset and the summary label - there is no
+ * need to set them here too.
+ */
+function applyValuesetSelection(event) {
+  var selected = $.trim($('#fhir_value_set_url').val());
+  if (selected) {
+    update_ontology_selection('FHIR', selected);
+  }
+  $('#fhir_valueset_dialog').dialog('close');
+  if (event) {
+    event.preventDefault();
+  }
+  return false;
+}
+
+function cancelValuesetDialog(event) {
+  $('#fhir_valueset_dialog').dialog('close');
+  if (event) {
+    event.preventDefault();
+  }
+  return false;
+}
 
 $(function () {
   var $app = $('#fhir_ontology_designer_app');
@@ -132,51 +168,63 @@ $(function () {
   }
   fhirOntologyModuleObject = resolveGlobalByPath($app.data('module-object'));
 
-  $("#fhir_valueset_search").autocomplete({
-      source: function (request, response) {
-          let search_type = $('#fhir_valueset_search_type').val();
-          // findValueSet()'s success shape is a plain array of {label, value};
-          // {error: "..."} (breaker open, transport failure, unknown type) and a
-          // framework-level rejection are both treated as "no matches" here -
-          // there's no result list UI in this widget to show an error in.
-          fhirOntologyModuleObject.ajax('find-valueset', {query: request.term, type: search_type}).then(function(data){
-              let result = [];
-              if (Array.isArray(data)) {
-                  for (let v of data) {
-                      result.push({'label': v.label, 'value': v.value});
-                  }
-              }
-              if (!result.length) {
-                  result.push({'label': 'No matches found', 'value': '__NMF__'});
-              }
-              response(result);
-          }).catch(function(){
-              response([{'label': 'No matches found', 'value': '__NMF__'}]);
-          });
-      },
-      select: function (event, ui) {
-          event.preventDefault();
-          if (ui.item.value !== '__NMF__') {
-              $('#fhir_valueset_search_code').text(ui.item.value);
-              $(this).val(ui.item.label);
-              return true;
-          } else {
-              return false;
-          }
-      },
-      focus: function (event, ui) {
-          event.preventDefault();
-          if (ui.item.value !== '__NMF__') {
-              $(this).val(ui.item.label);
-          }
+  $('#fhir_valueset_change').on('click', openChangeDialog);
+  $('#fhir_valueset_apply').on('click', applyValuesetSelection);
+  $('#fhir_valueset_cancel').on('click', cancelValuesetDialog);
 
-          return false;
-      },
-      minLength: 2
+  $('#fhir_valueset_search_type').on('change', function () {
+    $('#fhir_valueset_search').val('');
   });
-  $("#fhir_valueset_dialog").dialog({
-      autoOpen: false,
-      modal: true,
-      width: 'auto'
+
+  $('#fhir_value_set_url').on('change', function () {
+    showValuesetDetails($.trim($(this).val()));
+  });
+
+  $('#fhir_valueset_search').autocomplete({
+    source: function (request, response) {
+      var search_type = $('#fhir_valueset_search_type').val();
+      // findValueSet()'s success shape is a plain array of {label, value};
+      // {error: "..."} (breaker open, transport failure, unknown type) and a
+      // framework-level rejection are both treated as "no matches" here -
+      // there's no result list UI in this widget to show an error in.
+      fhirOntologyModuleObject.ajax('find-valueset', {query: request.term, type: search_type}).then(function (data) {
+        var result = [];
+        if (Array.isArray(data)) {
+          for (var v of data) {
+            result.push({label: v.label, value: v.value});
+          }
+        }
+        if (!result.length) {
+          result.push({label: 'No matches found', value: '__NMF__'});
+        }
+        response(result);
+      }).catch(function () {
+        response([{label: 'No matches found', value: '__NMF__'}]);
+      });
+    },
+    select: function (event, ui) {
+      event.preventDefault();
+      if (ui.item.value !== '__NMF__') {
+        $(this).val(ui.item.label);
+        $('#fhir_value_set_url').val(ui.item.value);
+        showValuesetDetails(ui.item.value);
+        return true;
+      }
+      return false;
+    },
+    focus: function (event, ui) {
+      event.preventDefault();
+      if (ui.item.value !== '__NMF__') {
+        $(this).val(ui.item.label);
+      }
+      return false;
+    },
+    minLength: 2
+  });
+
+  $('#fhir_valueset_dialog').dialog({
+    autoOpen: false,
+    modal: true,
+    width: 600
   });
 });

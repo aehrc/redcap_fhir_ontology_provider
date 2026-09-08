@@ -435,46 +435,51 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         $onlineDesignerHtml = <<<EOD
 <script src="{$this->getUrl('js/online-designer.js')}"></script>
 <div id="fhir_ontology_designer_app" data-module-object="{$jsObjectNameAttr}" style='margin:0 0 2px;'>
-  <div style='margin:3px 0 8px;color:#888;'>Search For valuset using:</div>
-  <select id='fhir_valueset_search_type' name='fhir_valueset_search_type' 
-          onchange='fhir_update_search_selection(this.options[this.selectedIndex].value)'
-          class='x-form-text x-form-field' style='padding-right:0;height:22px;width:330px;max-width:330px;'>
-    <option value=""> -- choose search criteria -- </option>
-    <option value="name">ValueSet Name</option>
-    <option value="codesystem">By CodeSystem(Title)</option>
-    {$implicitSearchOptions}
-  </select><br>
-  <div class="ui-front">
-   <input  id="fhir_valueset_search" class="x-form-text x-form-field" size="25">
-   <span id="fhir_valueset_search_code" style="display:none"></span>
-   <a class="ui-button ui-widget ui-corner-all" href="#" onclick="move_selected_valueset(event)">Select</a>
-   </div>
+  <input type="hidden" id="fhir_selected_valueset" value="">
+  <span id="fhir_selected_valueset_label" style="color:#888;">No ValueSet selected</span>
+  <a id="fhir_valueset_change" class="ui-button ui-widget ui-corner-all" href="#">Change...</a>
 
-  <input id="fhir_value_set" class="x-form-text x-form-field" size="25" type="text" onchange="manual_valuset_update(event)">
-   <a class="ui-button ui-widget ui-corner-all" href="#" onclick="show_selected_valueset(event)">Show Details</a>
-  
-   <div id="fhir_valueset_dialog" title="ValueSet Details">
-     <div>
+  <div id="fhir_valueset_dialog" title="Select FHIR ValueSet">
+    <div style="margin-bottom:8px;">
+      <label for="fhir_valueset_search_type">Search for ValueSet using:</label><br>
+      <select id='fhir_valueset_search_type' name='fhir_valueset_search_type' class='x-form-text x-form-field'>
+        <option value=""> -- choose search criteria -- </option>
+        <option value="name">ValueSet Name</option>
+        <option value="codesystem">By CodeSystem(Title)</option>
+        {$implicitSearchOptions}
+      </select>
+      <div class="ui-front">
+        <input id="fhir_valueset_search" class="x-form-text x-form-field" size="40">
+      </div>
+    </div>
+
+    <div style="margin-bottom:8px;">
+      <label for="fhir_value_set_url">Or enter a ValueSet URL directly:</label><br>
+      <input id="fhir_value_set_url" class="x-form-text x-form-field" size="40" type="text">
+    </div>
+
+    <div>
+      <div>
 	    <label for="fhirValueSet_url">URL:</label>
 	    <span id="fhirValueSet_url"></span>
 	   </div>
-     <div>
+      <div>
 	    <label for="fhirValueSet_name">Name:</label>
 	    <span id="fhirValueSet_name"></span>
 	   </div>
-     <div>
+      <div>
 	    <label for="fhirValueSet_version">Version:</label>
 	    <span id="fhirValueSet_version"></span>
 	   </div>
-     <div>
+      <div>
 	    <label for="fhirValueSet_status">Status:</label>
 	    <span id="fhirValueSet_status"></span>
 	   </div>
-     <div>
+      <div>
 	    <label for="fhirValueSet_expansion_count">Expansion Count:</label>
 	    <span id="fhirValueSet_expansion_count"></span>
 	   </div>
-     <table class="table table-stripped">
+      <table class="table table-stripped">
 			<thead>
 			  <tr>
 					<th class="col-sm-8">Display</th>
@@ -485,7 +490,13 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 			<tbody id="fhirValueSet_contains">
 			</tbody>
 		 </table>
-   </div>
+    </div>
+
+    <div style="margin-top:8px;text-align:right;">
+      <button id="fhir_valueset_apply" class="ui-button ui-widget ui-corner-all">Use this ValueSet</button>
+      <button id="fhir_valueset_cancel" class="ui-button ui-widget ui-corner-all">Cancel</button>
+    </div>
+  </div>
 </div>
 EOD;
         return $moduleObjectScript . $onlineDesignerHtml;

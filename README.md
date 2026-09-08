@@ -19,6 +19,24 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### Online Designer ontology picker redesigned as a single popup dialog
+
+- ***BREAKING: the inline search/select/manual-entry widget is gone***
+The Online Designer's field editor previously showed the search-type dropdown, an autocomplete search box, a
+"Select" link, a separate manual ValueSet URL field, and a "Show Details" link inline, all at once. It is replaced
+by a compact "Selected ValueSet: `<name or URL>`" summary and a single "Change..." button.
+- ***Search, manual entry, and details are now one dialog***
+Clicking "Change..." opens one popup containing the search-type selection, the name/CodeSystem/SNOMED CT/LOINC
+autocomplete search, a manual ValueSet URL field, and the ValueSet's details/expansion table together - previously
+the details view was a separate popup only reachable after first committing a selection.
+- ***Selecting a ValueSet no longer commits immediately***
+Picking a search result or typing a URL now only loads that ValueSet's details for review inside the dialog. The
+field's saved ontology selection only changes when "Use this ValueSet" is clicked; "Cancel" (or closing the
+dialog) discards whatever was being reviewed and leaves the previously saved selection untouched.
+- ***No stored data format change***
+The value saved against a field (`FHIR:<valueset-url>`) is exactly the same as before this change; only the Online
+Designer's own UI for choosing it is different. Fields configured under the old widget need no migration.
+
 ### Online Designer ontology picker now uses REDCap's module.ajax()
 
 - ***`FindValueSetService` page removed***
