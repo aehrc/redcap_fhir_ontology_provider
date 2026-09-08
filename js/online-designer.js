@@ -25,6 +25,14 @@ function resolveGlobalByPath(path) {
 var fhirOntologyModuleObject;
 
 /**
+ * Caches a resolved display name per ValueSet URL for this page's lifetime,
+ * so applying a just-previewed selection (showValuesetDetails() already
+ * fetched and rendered its name) doesn't re-fetch get-valueset-info a second
+ * time just for FHIR_ontology_changed()'s own label resolution.
+ */
+var valuesetNameCache = {};
+
+/**
  * Required callback REDCap core looks up by name (OntologyManager's
  * notifyOntologyProviders(), called from its own update_ontology_selection())
  * both when this provider's own selection is applied, and - critically - when
@@ -44,12 +52,20 @@ function FHIR_ontology_changed(service, category) {
   if (!category || !fhirOntologyModuleObject) {
     return;
   }
+  if (valuesetNameCache[category]) {
+    // Already resolved (typically by showValuesetDetails() previewing this
+    // exact URL moments ago, just before "Use this ValueSet" was clicked) -
+    // no need to ask the FHIR server again for a name we already have.
+    $('#fhir_selected_valueset_label').text(valuesetNameCache[category]);
+    return;
+  }
   // Best-effort: resolve a human-readable name for display. A failure here is
   // silent - the raw URL already shown above is a valid, if less friendly, label.
   // Guard against the selection having moved on by the time this resolves.
   fhirOntologyModuleObject.ajax('get-valueset-info', {valueSet: category}).then(function (data) {
     if (data && !data.error && data.name && $('#fhir_selected_valueset').val() === category) {
       $('#fhir_selected_valueset_label').text(data.name);
+      valuesetNameCache[category] = data.name;
     }
   }).catch(function () {});
 }
@@ -109,13 +125,25 @@ function showValuesetDetails(valueSetUrl) {
   }
 
   fhirOntologyModuleObject.ajax('get-valueset-info', {valueSet: valueSetUrl}).then(function (data) {
+    // Guard against a stale response: the user may have already picked a
+    // different result or typed a different URL by the time this resolves,
+    // in which case this response is no longer about what's on screen.
+    if ($('#fhir_value_set_url').val() !== valueSetUrl) {
+      return;
+    }
     if (data && data.error) {
       renderValuesetError(data.error);
       return;
     }
     if (data.url) $('#fhirValueSet_url').text(data.url);
     renderValuesetDetails(data);
+    if (data.name) {
+      valuesetNameCache[valueSetUrl] = data.name;
+    }
   }).catch(function (error) {
+    if ($('#fhir_value_set_url').val() !== valueSetUrl) {
+      return;
+    }
     renderValuesetError(typeof error === 'string' ? error : 'The request could not be completed.');
   });
 }
@@ -142,14 +170,21 @@ function openChangeDialog(event) {
  * need to set them here too.
  */
 function applyValuesetSelection(event) {
-  var selected = $.trim($('#fhir_value_set_url').val());
-  if (selected) {
-    update_ontology_selection('FHIR', selected);
-  }
-  $('#fhir_valueset_dialog').dialog('close');
   if (event) {
     event.preventDefault();
   }
+  var selected = $.trim($('#fhir_value_set_url').val());
+  // #fhirValueSet_url only reflects a non-stale preview (see the guard in
+  // showValuesetDetails()), so this comparison is reliable: if the preview
+  // for this exact text errored, the error is already visible in the dialog -
+  // don't silently commit it anyway. Leave the dialog open so that error
+  // stays visible, rather than closing over it.
+  var previewFailed = $('#fhirValueSet_url').text() === selected && $('#fhirValueSet_contains tr.error').length > 0;
+  if (!selected || previewFailed) {
+    return false;
+  }
+  update_ontology_selection('FHIR', selected);
+  $('#fhir_valueset_dialog').dialog('close');
   return false;
 }
 
