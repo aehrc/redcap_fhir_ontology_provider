@@ -408,17 +408,78 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $html = $this->module->getOnlineDesignerSection();
 
         $this->assertStringContainsString('<!-- FAKE_JSMO_INIT -->', $html);
-        $this->assertSame(
-            2,
-            substr_count($html, "FAKE.Js.ModuleObject.ajax("),
-            'both the search autocomplete and Show Details must call the module object\'s ajax()'
-        );
-        $this->assertStringContainsString("FAKE.Js.ModuleObject.ajax('find-valueset',", $html);
-        $this->assertStringContainsString("FAKE.Js.ModuleObject.ajax('get-valueset-info',", $html);
-        // The old page-based approach is fully gone, not just unused.
+        // Not an assertion this method can make about the .ajax() call sites
+        // themselves anymore (those moved to js/online-designer.js, a real
+        // file PHPUnit can't execute) - just that the wrapper carries the
+        // module object path for that file to pick up at init time.
+        $this->assertStringContainsString('data-module-object="FAKE.Js.ModuleObject"', $html);
+        // The old page-based approach, and the old inline-script approach it
+        // was replaced with, are both fully gone, not just unused.
         $this->assertStringNotContainsString('FindValueSetService', $html);
         $this->assertStringNotContainsString('redcap_csrf_token', $html);
         $this->assertStringNotContainsString('$.ajax', $html);
+        $this->assertStringNotContainsString('function show_selected_valueset', $html);
+        $this->assertStringNotContainsString('.ajax(', $html);
+    }
+
+    public function testOnlineDesignerSectionLoadsExtractedJsFileNotInlineScript(): void
+    {
+        $html = $this->module->getOnlineDesignerSection();
+
+        $this->assertStringContainsString('<script src="FAKE_MODULE_URL/js/online-designer.js"></script>', $html);
+        $this->assertStringNotContainsString('<script type="text/javascript">', $html);
+    }
+
+    public function testOnlineDesignerSectionEscapesTheModuleObjectNameInTheDataAttribute(): void
+    {
+        // getJavascriptModuleObjectName() is a REDCap-core-computed value, not
+        // attacker input - but the data-module-object attribute must still be
+        // safe against a value containing HTML metacharacters, since the
+        // escapeHtml() call is what actually guarantees that, not the value's
+        // real-world shape.
+        $this->module->jsModuleObjectName = 'FAKE"><script>alert(1)</script>';
+
+        $html = $this->module->getOnlineDesignerSection();
+
+        $this->assertStringContainsString(
+            'data-module-object="FAKE&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"',
+            $html
+        );
+        $this->assertStringNotContainsString('<script>alert(1)</script>', $html);
+    }
+
+    public function testTooltipScriptsLoadExtractedJsFileNotInlineScript(): void
+    {
+        $this->module->systemSettings['add_value_tooltip'] = true;
+
+        ob_start();
+        $this->module->redcap_data_entry_form(1, 1, 'instrument', 1, null, 1);
+        $dataEntryHtml = ob_get_clean();
+
+        ob_start();
+        $this->module->redcap_survey_page(1, 1, 'instrument', 1, null, 'hash', 1, 1);
+        $surveyHtml = ob_get_clean();
+
+        foreach ([$dataEntryHtml, $surveyHtml] as $html) {
+            $this->assertStringContainsString('<script src="FAKE_MODULE_URL/js/value-tooltip.js"></script>', $html);
+            $this->assertStringNotContainsString('autosug-ont-field', $html);
+        }
+    }
+
+    public function testTooltipScriptsAreOmittedWhenSettingDisabled(): void
+    {
+        $this->module->systemSettings['add_value_tooltip'] = false;
+
+        ob_start();
+        $this->module->redcap_data_entry_form(1, 1, 'instrument', 1, null, 1);
+        $dataEntryHtml = ob_get_clean();
+
+        ob_start();
+        $this->module->redcap_survey_page(1, 1, 'instrument', 1, null, 'hash', 1, 1);
+        $surveyHtml = ob_get_clean();
+
+        $this->assertSame('', $dataEntryHtml);
+        $this->assertSame('', $surveyHtml);
     }
 
     // --- redcap_module_ajax() ---

@@ -1,0 +1,31 @@
+name: js-lint
+
+on:
+  pull_request:
+    paths:
+      - 'js/**'
+      - 'eslint.config.js'
+      - '.github/workflows/js-lint.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'js/**'
+      - 'eslint.config.js'
+      - '.github/workflows/js-lint.yml'
+
+jobs:
+  eslint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No lockfile/npm project for two lint-only dependencies - versions are
+      # pinned here instead. See design.md in
+      # openspec/changes/fhir-ontology-provider-extract-inline-js.
+      - run: npm install --no-save eslint@10.9.1 eslint-plugin-no-jquery@6.0.0
+
+      - run: npx eslint js/

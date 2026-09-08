@@ -36,11 +36,14 @@ namespace ExternalModules {
 
         /** Real getJavascriptModuleObjectName() returns a dotted namespace path
          *  (e.g. "ExternalModules.AEHRC.FhirOntologyAutocompleteExternalModule")
-         *  - this fake just needs to be a distinctive, valid-JS-identifier-path
-         *  string tests can assert on. */
+         *  - this fake defaults to a distinctive, valid-JS-identifier-path string
+         *  tests can assert on, but is overridable so a test can also verify
+         *  escaping of a value containing HTML metacharacters. */
+        public $jsModuleObjectName = 'FAKE.Js.ModuleObject';
+
         public function getJavascriptModuleObjectName()
         {
-            return 'FAKE.Js.ModuleObject';
+            return $this->jsModuleObjectName;
         }
 
         /** Real initializeJavascriptModuleObject() prints (not returns) a
@@ -68,6 +71,11 @@ namespace {
 
     class REDCap
     {
+        public static function escapeHtml($value)
+        {
+            return htmlspecialchars((string)$value, ENT_QUOTES);
+        }
+
         /** @var int Call counter so tests can assert getHideChoice()'s $Proj
          *  fast path avoided this full-dictionary-reload path. */
         public static int $getDataDictionaryCallCount = 0;

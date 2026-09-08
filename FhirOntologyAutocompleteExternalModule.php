@@ -52,31 +52,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
     {
 
         if ($this->getSystemSetting('add_value_tooltip')) {
-            // this is a bit of a hack, if redcap change their code it will break
-            // it looks for all input fields tagged as autosug-ont-field
-            // which should mean they are an ontology lookup and adds
-            // a hover function which will set the fields title to match
-            // its value. This should give a popup with the full value
-            // text shown instead of being restricted by the size of
-            // the input field.
-
-            $dataEntryHtml = <<<EOD
-<script type="text/javascript">
-      // IIFE - Immediately Invoked Function Expression
-      (function($, window, document) {
-          // The $ is now locally scoped
-          $('input.autosug-ont-field').each(function(){
-              $( this ).hover(function(){
-                  $( this ).attr('title', $( this ).val());
-                  return true;
-              });
-          });
-          
-      }(window.jQuery, window, document));
-      // The global jQuery object is passed as a parameter
-</script>
-EOD;
-            print($dataEntryHtml);
+            print('<script src="' . $this->getUrl('js/value-tooltip.js') . '"></script>');
         }
     }
 
@@ -87,30 +63,7 @@ EOD;
     {
 
         if ($this->getSystemSetting('add_value_tooltip')) {
-            // this is a bit of a hack, if redcap change their code it will break
-            // it looks for all input fields tagged as autosug-ont-field
-            // which should mean they are an ontology lookup and adds
-            // a hover function which will set the fields title to match
-            // its value. This should give a popup with the full value
-            // text shown instead of being restricted by the size of
-            // the input field.
-            $surveyHtml = <<<EOD
-<script type="text/javascript">
-      // IIFE - Immediately Invoked Function Expression
-      (function($, window, document) {
-          // The $ is now locally scoped
-          $('input.autosug-ont-field').each(function(){
-              $( this ).hover(function(){
-                  $( this ).attr('title', $( this ).val());
-                  return true;
-              });
-          });
-          
-      }(window.jQuery, window, document));
-      // The global jQuery object is passed as a parameter
-</script>
-EOD;
-            print($surveyHtml);
+            print('<script src="' . $this->getUrl('js/value-tooltip.js') . '"></script>');
         }
     }
 
@@ -447,7 +400,7 @@ EOD;
     public function getOnlineDesignerSection()
     {
 
-        // initializeJavascriptModuleObject() prints (does not return) a <script>
+        // initializeJavascriptModuleObject() prints (does not return) a script
         // block that sets up window.<jsObjectName>.ajax(), which POSTs to the
         // framework's own module-ajax endpoint with CSRF/verification handled
         // internally - this replaces both the hand-rolled $.ajax() calls this
@@ -462,7 +415,10 @@ EOD;
         ob_start();
         $this->initializeJavascriptModuleObject();
         $moduleObjectScript = ob_get_clean();
-        $jsObjectName = $this->getJavascriptModuleObjectName();
+        // Crosses into js/online-designer.js via the wrapper div's data-module-object
+        // attribute below, not string-interpolated into a script body - see that
+        // file's own docblock for why (it's a real file now, not a PHP template).
+        $jsObjectNameAttr = \REDCap::escapeHtml($this->getJavascriptModuleObjectName());
 
         $loincSupport = $this->hasLoincSupport();
         $implicitSearchOptions = '';
@@ -477,162 +433,8 @@ EOD;
         }
 
         $onlineDesignerHtml = <<<EOD
-<script type="text/javascript">
-
-  function FHIR_ontology_changed(service, category){
-    if ('FHIR' !== service){
-      $('#fhir_valueset_search_type').val('');
-      $('#fhir_valueset_search').val('');
-      $('#fhir_valueset_search_code').text('');
-      $('#fhir_value_set').val('');
-    }
-    else {
-      $('#fhir_value_set').val(category);
-    }
-  }
-
-  function fhir_update_search_selection(selectedValue){
-        $('#fhir_valueset_search').val('');
-        $('#fhir_valueset_search_code').text('');
-  }
-
-  function move_selected_valueset(event){
-        selected_valueset = $('#fhir_valueset_search_code').text();
-        if (selected_valueset){
-          $('#fhir_value_set').val(selected_valueset);
-          update_ontology_selection('FHIR', selected_valueset);
-        }
-        event.preventDefault();
-        return false;
-  }
-
-  function manual_valuset_update(event){
-        selected_valueset = $('#fhir_value_set').val();
-        if (selected_valueset){
-          update_ontology_selection('FHIR', selected_valueset);
-        }
-  }
-
-
-  function JSON_STRING(data){
-    this.data = data;
-  }
-
-  JSON_STRING.prototype.toString = function(){return JSON.stringify(this.data)};
-
-  function renderValuesetError(message){
-    // build via DOM - the message may echo text a project designer typed as the
-    // valueset id/url, so it must never be concatenated into markup
-    $('#fhirValueSet_name').text('');
-    $('#fhirValueSet_version').text('');
-    $('#fhirValueSet_status').text('');
-    $('#fhirValueSet_expansion_count').text('');
-    var errorCell = $('<td>').addClass('data').attr('colspan', '3');
-    errorCell.append(document.createTextNode(message));
-    $('#fhirValueSet_contains').append($('<tr>').addClass('error').append(errorCell));
-  }
-
-  function show_selected_valueset(event){
-        selected_valueset = $('#fhir_valueset_search_code').text();
-        if (selected_valueset === ''){
-          selected_valueset = $('#fhir_value_set').val();
-        }
-        if (selected_valueset){
-          $('#fhirValueSet_url').text('');
-          $('#fhirValueSet_name').text('');
-          $('#fhirValueSet_version').text('');
-          $('#fhirValueSet_status').text('');
-          $('#fhirValueSet_expansion_count').text('');
-          $('#fhirValueSet_contains').empty();
-
-          // redcap_module_ajax()'s 'get-valueset-info' action returns either the
-          // parsed FHIR ValueSet resource, or {error: "..."} for a domain-level
-          // failure (breaker open, transport failure, malformed response) -
-          // that's a normal resolved payload, not a rejection (module.ajax()
-          // only rejects for a framework-level failure, e.g. verification).
-          {$jsObjectName}.ajax('get-valueset-info', {valueSet: selected_valueset}).then(function(data){
-            if (data && data.error){
-              $('#fhirValueSet_url').text(selected_valueset);
-              renderValuesetError(data.error);
-              return;
-            }
-            if (data.url) $('#fhirValueSet_url').text(data.url);
-            if (data.name) $('#fhirValueSet_name').text(data.name);
-            if (data.version) $('#fhirValueSet_version').text(data.version);
-            if (data.status) $('#fhirValueSet_status').text(data.status);
-            if (data.expansion && data.expansion.total) $('#fhirValueSet_expansion_count').text(data.expansion.total);
-            if (data.expansion && data.expansion.contains){
-              for (v of data.expansion.contains){
-                // build via DOM so server supplied text can never be parsed as markup
-                var row = $('<tr>');
-                row.append($('<td>').addClass('data').text(v.display));
-                row.append($('<td>').addClass('data').text(v.code));
-                row.append($('<td>').addClass('data').text(v.system));
-                $('#fhirValueSet_contains').append(row);
-              }
-            }
-          }).catch(function(error){
-            $('#fhirValueSet_url').text(selected_valueset);
-            renderValuesetError(typeof error === 'string' ? error : 'The request could not be completed.');
-          });
-          $('#fhir_valueset_dialog').dialog('open');
-        }
-        event.preventDefault();
-        return false;
-  }
-
-
-
- $(function () {
-    $("#fhir_valueset_search").autocomplete({
-        source: function (request, response) {
-            let search_type = $('#fhir_valueset_search_type').val();
-            // findValueSet()'s success shape is a plain array of {label, value};
-            // {error: "..."} (breaker open, transport failure, unknown type) and a
-            // framework-level rejection are both treated as "no matches" here -
-            // there's no result list UI in this widget to show an error in.
-            {$jsObjectName}.ajax('find-valueset', {query: request.term, type: search_type}).then(function(data){
-                let result = [];
-                if (Array.isArray(data)) {
-                    for (let v of data) {
-                        result.push({'label': v.label, 'value': v.value});
-                    }
-                }
-                if (!result.length) {
-                    result.push({'label': 'No matches found', 'value': '__NMF__'});
-                }
-                response(result);
-            }).catch(function(){
-                response([{'label': 'No matches found', 'value': '__NMF__'}]);
-            });
-        },
-        select: function (event, ui) {
-            event.preventDefault();
-            if (ui.item.value !== '__NMF__') {
-                $('#fhir_valueset_search_code').text(ui.item.value);
-                $(this).val(ui.item.label);
-                return true;
-            } else {
-                return false;
-            }
-        },
-        focus: function (event, ui) {
-            event.preventDefault();
-            if (ui.item.value !== '__NMF__') {
-                $(this).val(ui.item.label);
-            }
-
-            return false;
-        },
-        minLength: 2
-    });
-    $("#fhir_valueset_dialog").dialog({
-        autoOpen: false,
-        modal: true,
-        width: 'auto'
-    });
-});</script>
-<div style='margin:0 0 2px;'>
+<script src="{$this->getUrl('js/online-designer.js')}"></script>
+<div id="fhir_ontology_designer_app" data-module-object="{$jsObjectNameAttr}" style='margin:0 0 2px;'>
   <div style='margin:3px 0 8px;color:#888;'>Search For valuset using:</div>
   <select id='fhir_valueset_search_type' name='fhir_valueset_search_type' 
           onchange='fhir_update_search_selection(this.options[this.selectedIndex].value)'
