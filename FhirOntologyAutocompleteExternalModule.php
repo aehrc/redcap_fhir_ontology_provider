@@ -440,7 +440,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
   <a id="fhir_valueset_change" class="ui-button ui-widget ui-corner-all" href="#">Change...</a>
 
   <div id="fhir_valueset_dialog" title="Select FHIR ValueSet">
-    <div style="margin-bottom:8px;">
+    <div>
       <label for="fhir_valueset_search_type">Search for ValueSet using:</label><br>
       <select id='fhir_valueset_search_type' name='fhir_valueset_search_type' class='x-form-text x-form-field'>
         <option value=""> -- choose search criteria -- </option>
@@ -453,10 +453,14 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
       </div>
     </div>
 
-    <div style="margin-bottom:8px;">
+    <hr style="border:none;border-top:1px solid #bbb;margin:14px 0;">
+
+    <div>
       <label for="fhir_value_set_url">Or enter a ValueSet URL directly:</label><br>
       <input id="fhir_value_set_url" class="x-form-text x-form-field" size="40" type="text">
     </div>
+
+    <hr style="border:none;border-top:1px solid #bbb;margin:14px 0;">
 
     <div>
       <div>
@@ -492,7 +496,9 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 		 </table>
     </div>
 
-    <div style="margin-top:8px;text-align:right;">
+    <hr style="border:none;border-top:1px solid #bbb;margin:14px 0;">
+
+    <div style="text-align:right;">
       <button id="fhir_valueset_apply" class="ui-button ui-widget ui-corner-all">Use this ValueSet</button>
       <button id="fhir_valueset_cancel" class="ui-button ui-widget ui-corner-all">Cancel</button>
     </div>
