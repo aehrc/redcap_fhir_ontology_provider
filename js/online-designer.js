@@ -42,6 +42,26 @@ var valuesetNameCache = {};
 var pendingPreviewUrl = null;
 
 /**
+ * true exactly while a find-valueset autocomplete search is in flight.
+ * REDCap core's own JSMO ajax() client (ExternalModules.__ajaxQueue) queues
+ * EVERY module.ajax() call for the whole browser tab and runs them strictly
+ * one at a time - each response's rotating verification token feeds the next
+ * request, so this isn't just a soft duplicate-request guard, core genuinely
+ * cannot run them concurrently. Firing one real request per keystroke against
+ * a slow terminology server (a SNOMED CT "isa" search, say) would queue up
+ * several multi-second real network calls back to back, making the search
+ * box look stuck for a long burst of typing. runFindValuesetSearch() and
+ * pendingFindValuesetRequest below coalesce a typing burst into at most one
+ * in-flight request plus one queued follow-up using the latest term, instead
+ * of one request per keystroke.
+ */
+var findValuesetSearchInFlight = false;
+
+/** The most recent {request, response} superseded while a search was already
+ * in flight - run once that search settles, per the note above. */
+var pendingFindValuesetRequest = null;
+
+/**
  * Required callback REDCap core looks up by name (OntologyManager's
  * notifyOntologyProviders(), called from its own update_ontology_selection())
  * both when this provider's own selection is applied, and - critically - when
@@ -186,6 +206,43 @@ function showValuesetDetails(valueSetUrl) {
   });
 }
 
+/**
+ * Runs one find-valueset search and reports its result to jQuery UI
+ * autocomplete via response(). While it's in flight, further source() calls
+ * are coalesced into pendingFindValuesetRequest rather than firing their own
+ * request - see findValuesetSearchInFlight's docblock. Once this one settles,
+ * runs exactly one follow-up for the latest superseded request, if any.
+ */
+function runFindValuesetSearch(request, response) {
+  var search_type = $('#fhir_valueset_search_type').val();
+  findValuesetSearchInFlight = true;
+  // findValueSet()'s success shape is a plain array of {label, value};
+  // {error: "..."} (breaker open, transport failure, unknown type) and a
+  // framework-level rejection are both treated as "no matches" here -
+  // there's no result list UI in this widget to show an error in.
+  fhirOntologyModuleObject.ajax('find-valueset', {query: request.term, type: search_type}).then(function (data) {
+    var result = [];
+    if (Array.isArray(data)) {
+      for (var v of data) {
+        result.push({label: v.label, value: v.value});
+      }
+    }
+    if (!result.length) {
+      result.push({label: 'No matches found', value: '__NMF__'});
+    }
+    response(result);
+  }).catch(function () {
+    response([{label: 'No matches found', value: '__NMF__'}]);
+  }).then(function () {
+    findValuesetSearchInFlight = false;
+    if (pendingFindValuesetRequest) {
+      var next = pendingFindValuesetRequest;
+      pendingFindValuesetRequest = null;
+      runFindValuesetSearch(next.request, next.response);
+    }
+  });
+}
+
 function openChangeDialog(event) {
   var current = $('#fhir_selected_valueset').val();
   $('#fhir_valueset_search_type').val('');
@@ -260,25 +317,20 @@ $(function () {
 
   $('#fhir_valueset_search').autocomplete({
     source: function (request, response) {
-      var search_type = $('#fhir_valueset_search_type').val();
-      // findValueSet()'s success shape is a plain array of {label, value};
-      // {error: "..."} (breaker open, transport failure, unknown type) and a
-      // framework-level rejection are both treated as "no matches" here -
-      // there's no result list UI in this widget to show an error in.
-      fhirOntologyModuleObject.ajax('find-valueset', {query: request.term, type: search_type}).then(function (data) {
-        var result = [];
-        if (Array.isArray(data)) {
-          for (var v of data) {
-            result.push({label: v.label, value: v.value});
-          }
+      if (findValuesetSearchInFlight) {
+        // A search is already queued/in flight - see
+        // findValuesetSearchInFlight's docblock. Answer any previously
+        // superseded request with an empty result first: jQuery UI's
+        // autocomplete tracks its own "pending" count per response() call, so
+        // every source() invocation needs its response() called eventually,
+        // even one this coalescing decides never to actually run.
+        if (pendingFindValuesetRequest) {
+          pendingFindValuesetRequest.response([]);
         }
-        if (!result.length) {
-          result.push({label: 'No matches found', value: '__NMF__'});
-        }
-        response(result);
-      }).catch(function () {
-        response([{label: 'No matches found', value: '__NMF__'}]);
-      });
+        pendingFindValuesetRequest = {request: request, response: response};
+        return;
+      }
+      runFindValuesetSearch(request, response);
     },
     select: function (event, ui) {
       event.preventDefault();
@@ -303,6 +355,12 @@ $(function () {
   $('#fhir_valueset_dialog').dialog({
     autoOpen: false,
     modal: true,
-    width: 600
+    width: 600,
+    // Safety net on top of the results table's own scroll region (added
+    // separately in the markup) - jQuery UI makes the dialog's content area
+    // scrollable once it would exceed this, so a small viewport (or any
+    // future content growth) still leaves the footer buttons reachable
+    // instead of pushing them off-screen.
+    maxHeight: Math.max(400, $(window).height() - 100)
   });
 });

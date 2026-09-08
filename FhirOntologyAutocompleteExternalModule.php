@@ -483,7 +483,8 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 	    <label for="fhirValueSet_expansion_count">Expansion Count:</label>
 	    <span id="fhirValueSet_expansion_count"></span>
 	   </div>
-      <table class="table table-stripped">
+      <div style="max-height:220px;overflow-y:auto;">
+        <table class="table table-stripped">
 			<thead>
 			  <tr>
 					<th class="col-sm-8">Display</th>
@@ -494,6 +495,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 			<tbody id="fhirValueSet_contains">
 			</tbody>
 		 </table>
+      </div>
     </div>
 
     <hr style="border:none;border-top:1px solid #bbb;margin:14px 0;">
