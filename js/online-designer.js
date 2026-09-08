@@ -61,20 +61,28 @@ function FHIR_ontology_changed(service, category) {
   if (!category || !fhirOntologyModuleObject) {
     return;
   }
-  if (valuesetNameCache[category]) {
+  if (Object.prototype.hasOwnProperty.call(valuesetNameCache, category)) {
     // Already resolved (typically by showValuesetDetails() previewing this
     // exact URL moments ago, just before "Use this ValueSet" was clicked) -
-    // no need to ask the FHIR server again for a name we already have.
-    $('#fhir_selected_valueset_label').text(valuesetNameCache[category]);
+    // no need to ask the FHIR server again for an answer we already have,
+    // even if that answer was "this ValueSet has no name".
+    if (valuesetNameCache[category]) {
+      $('#fhir_selected_valueset_label').text(valuesetNameCache[category]);
+    }
     return;
   }
   // Best-effort: resolve a human-readable name for display. A failure here is
   // silent - the raw URL already shown above is a valid, if less friendly, label.
   // Guard against the selection having moved on by the time this resolves.
   fhirOntologyModuleObject.ajax('get-valueset-info', {valueSet: category}).then(function (data) {
-    if (data && !data.error && data.name && $('#fhir_selected_valueset').val() === category) {
-      $('#fhir_selected_valueset_label').text(data.name);
-      valuesetNameCache[category] = data.name;
+    if ($('#fhir_selected_valueset').val() !== category) {
+      return;
+    }
+    if (data && !data.error) {
+      valuesetNameCache[category] = data.name || null;
+      if (data.name) {
+        $('#fhir_selected_valueset_label').text(data.name);
+      }
     }
   }).catch(function () {});
 }
@@ -137,6 +145,14 @@ function showValuesetDetails(valueSetUrl) {
     return;
   }
 
+  if (valueSetUrl === pendingPreviewUrl) {
+    // Already fetching this exact URL (e.g. Change -> Cancel -> Change again
+    // before the first request settled) - that request's own .then()/.catch()
+    // will still render the result once it lands, so there is nothing this
+    // second call needs to kick off.
+    return;
+  }
+
   // Set synchronously, before the request goes out, so applyValuesetSelection()
   // can never observe a moment where this URL's preview looks neither pending
   // nor failed just because the response hasn't arrived yet.
@@ -158,9 +174,7 @@ function showValuesetDetails(valueSetUrl) {
     }
     if (data.url) $('#fhirValueSet_url').text(data.url);
     renderValuesetDetails(data);
-    if (data.name) {
-      valuesetNameCache[valueSetUrl] = data.name;
-    }
+    valuesetNameCache[valueSetUrl] = data.name || null;
   }).catch(function (error) {
     if (pendingPreviewUrl === valueSetUrl) {
       pendingPreviewUrl = null;
