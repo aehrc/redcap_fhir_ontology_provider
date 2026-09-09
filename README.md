@@ -114,7 +114,7 @@ are now handled explicitly instead of producing PHP warnings.
 
 - ***Change storage format***
 In version 0.5 of this module the way the selected code is stored has been changed. In earlier version the code used the
-format '${code}|${display}|${system}' as returned by the fhir server. If the display was large, this could result in
+format `${code}|${display}|${system}` as returned by the fhir server. If the display was large, this could result in
 a code which was more than 100 characters which would make the display lookup fail. Instead just '${code}|${system}'
 will be stored.
 - ***Basic Authentication support***
@@ -167,26 +167,27 @@ The following site wide settings are available:
 
 ### Online designer
 
-Once enabled the online designer will have a new ontology source available. If selected the following UI elements will be made available:
+Once enabled the online designer will have a new ontology source available. Selecting `FHIR` as the field's ontology
+source replaces the field's search-type/autocomplete/details controls with a compact "Selected ValueSet:" summary and
+a single "Change..." button (see [Online Designer ontology picker redesigned as a single popup dialog](#online-designer-ontology-picker-redesigned-as-a-single-popup-dialog)
+above). Clicking "Change..." opens one dialog containing:
 
--Search For valuset using: (dropdown with the options)
- - ValueSet Name - searching using the name of the valueset
- - By CodeSystem - searching using the title of the codesystem
- - SNOMED CT Refset - search for a SNOMED CT Refset
- - SNOMED CT isa implicit valueset - search for a SNOMED CT concept and use the valueset composed of it and its children
- - LOINC implicit answer set - search for a LOINC implicit answer set
-    
--text input with autocomplete based on the search mode
+- **Search for ValueSet using:** a dropdown choosing how the search box below it matches, with the options:
+  - ValueSet Name - searching using the name of the valueset
+  - By CodeSystem - searching using the title of the codesystem
+  - SNOMED CT Refset - search for a SNOMED CT Refset
+  - SNOMED CT isa implicit valueset - search for a SNOMED CT concept and use the valueset composed of it and its children
+  - LOINC implicit answer set - search for a LOINC implicit answer set
+- an autocomplete search box driven by the search-type above, for finding a ValueSet without already knowing its URL
+- **Or enter a ValueSet URL directly:** a text input holding the URI of the ValueSet under review - filled in
+  automatically by picking an autocomplete result, or editable directly if the URL is already known
+- a details panel showing the reviewed ValueSet's URL/name/version/status/expansion count, and a table of its first
+  entries (Display/Code/System)
+- **"Use this ValueSet"**/**"Cancel"** buttons - picking a search result or typing a URL only loads that ValueSet's
+  details for review; the field's saved selection only changes once "Use this ValueSet" is clicked, and "Cancel" (or
+  closing the dialog) discards the review and leaves the previously saved selection untouched
 
--select button - Select the valueset found using the search, making it the selected valuset
-
--text input which is filled out by the search button, contains the uri for the selected valueset
-
--Show details button - Retrieve the first 10 entries of the selected valueset, and display along with other information about the valueset in a dialog.
-
-![Online Designer](documentation/online_designer.png)
-
-![Show Details](documentation/ShowDetails.png)
+![Select FHIR ValueSet dialog](documentation/SelectFhirValueSet.png)
 
 
 ### @HIDECHOICE support
