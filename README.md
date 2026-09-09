@@ -19,6 +19,24 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
+### @HIDECHOICE never actually worked from a real data-entry request, and @FHIR-ONTOLOGY-HIDECHOICE added
+
+- ***Fixed: @HIDECHOICE was silently ignored on every real autocomplete search***
+`getHideChoice()`'s in-memory fast path read the field's annotation from `$Proj->metadata[$field]['field_annotation']`,
+but REDCap's real in-memory project metadata stores it under the raw DB column name `misc` - `field_annotation` is
+a key name that only exists in `getDataDictionary()`'s own returned array. Because the fast path's *presence* check
+(`isset($Proj->metadata[$field])`) still succeeded, it never fell through to the (correct) `getDataDictionary()`
+branch - it just silently returned no annotation, and therefore no hidden codes, for every real request. This had
+been broken since @HIDECHOICE was introduced in 0.4; it only ever appeared to work in this module's own test suite,
+whose fakes made the same `field_annotation` mistake.
+- ***Added: `@FHIR-ONTOLOGY-HIDECHOICE`, a second tag name for the same purpose***
+`@HIDECHOICE` is also REDCap's own built-in action tag (for a different purpose, on real choice fields), and a
+module-provided action tag whose name collides with a built-in one is silently dropped from REDCap's own
+"@ Action Tags" popup rather than shown - so this module's repurposing of `@HIDECHOICE` could never be documented
+there. `@FHIR-ONTOLOGY-HIDECHOICE` is a new, non-colliding tag name recognized for exactly the same purpose,
+registered in that popup; both names are supported and can be freely mixed on the same field. See
+[@HIDECHOICE support](#hidechoice-support) below.
+
 ### Online Designer ontology picker redesigned as a single popup dialog
 
 - ***BREAKING: the inline search/select/manual-entry widget is gone***
@@ -196,11 +214,33 @@ The @HIDECHOICE action tag is specified at a field level, the values will only b
 action tag is specified for. The set of values to hide is defined using a comma separated list of codes for the
 values which should be hidden. The value is matched against the FHIR code only, it does not consider the system
 of the value. If a valueset contains multiple values with the same code but different systems, then this cannot be
-differentiated. The module considers all @HIDECHOICE entries found in the annotations property of the
-field. The module will not try to expand piped variables in the choice list. 
+differentiated. The module considers all @HIDECHOICE entries found in the annotations property of the field.
 ```text
 @HIDECHOICE='code1,code2'
 ```
+
+`@HIDECHOICE` is also REDCap's own built-in action tag, used for a different purpose on real choice fields
+(checkbox/radio/dropdown/yes-no/true-false). Because this module's FHIR autocomplete fields are plain text fields,
+core's own `@HIDECHOICE` behavior never applies to them, so there's no functional conflict - but it does mean this
+module's use of the same tag name can never appear in REDCap's own "@ Action Tags" popup (a module tag colliding
+with a built-in tag of the same name is silently dropped from that list, not shown). `@FHIR-ONTOLOGY-HIDECHOICE` is
+a second, equivalent tag name - registered in that popup - that this module recognizes for exactly the same
+purpose. Both are supported and can be freely mixed; a field can use either name, or both at once (the hidden-code
+lists are merged):
+```text
+@FHIR-ONTOLOGY-HIDECHOICE='code1,code2'
+```
+
+**Piping is not supported, and not currently possible, in `@HIDECHOICE`'s or `@FHIR-ONTOLOGY-HIDECHOICE`'s
+argument** (e.g. `@HIDECHOICE='[other_field]'` to hide a code chosen by another field's answer). REDCap core's own
+built-in `@HIDECHOICE` resolves piping in its argument via `Piping::replaceVariablesInLabel($text, $record,
+$event_id, $instance, ...)`, which needs to know which record is currently being edited. This module's field-level
+tags are read from inside `DataEntry/web_service_auto_suggest.php` - the same real endpoint every search on this
+field hits - and that endpoint's request never carries a record, event, or instance identifier at all; REDCap
+core's own front-end JS only ever sends `term`, `field`, and `pid` to it. There is no record context available to
+pipe against from here, regardless of how this module parses the tag, so this isn't a missing feature so much as a
+limitation of the integration point itself - it would only become possible if a future REDCap version started
+including record context in that request.
 
 
 ### Label Cache Issue
