@@ -574,7 +574,12 @@ EOD;
                 return []; // snomed implicit valuesets not supported
             }
             $method = "GET";
-            $params = ['filter' => $query, 'url' => 'http://snomed.info/sct?fhir_vs=refset', '_count' => 20];
+            // $expand is a FHIR *operation*, not a plain resource search - its count
+            // parameter is 'count', not the REST search modifier '_count'. Ontoserver
+            // silently ignores an unrecognized parameter rather than rejecting the
+            // request, so '_count' here had no effect at all (confirmed live: same
+            // request with 'count' instead correctly limits the response).
+            $params = ['filter' => $query, 'url' => 'http://snomed.info/sct?fhir_vs=refset', 'count' => 20];
             $url = '/ValueSet/$expand';
             $processFunction = function ($data) {
                 $result = [];
@@ -594,7 +599,8 @@ EOD;
                 return []; // snomed implicit valuesets not supported
             }
             $method = "GET";
-            $params = ['filter' => $query, 'url' => 'http://snomed.info/sct?fhir_vs', '_count' => 20];
+            // 'count', not '_count' - see the 'refset' branch above for why.
+            $params = ['filter' => $query, 'url' => 'http://snomed.info/sct?fhir_vs', 'count' => 20];
             $url = '/ValueSet/$expand';
             $processFunction = function ($data) {
                 $result = [];
@@ -617,7 +623,8 @@ EOD;
                     "resourceType" => "Parameters",
                     "parameter" => [
                         ["name" => "filter", "valueString" => $query],
-                        ["name" => "_count", "valueInteger" => 20],
+                        // 'count', not '_count' - see the 'refset' branch above for why.
+                        ["name" => "count", "valueInteger" => 20],
                         ["name" => "valueSet",
                             "resource" => [
                                 "resourceType" => "ValueSet",
@@ -654,7 +661,10 @@ EOD;
             }
             elseif ('filter' === $loincSupport){
                 $method = "GET";
-                $params = ['filter' => $query, 'url' => 'http://loinc.org/vs', '_count' => 100];
+                // 'count', not '_count' - see the 'refset' branch above for why. 100
+                // rather than 20 because this sub-case still filters client-side for
+                // LL-prefixed (answer-list) codes afterwards - see the loop below.
+                $params = ['filter' => $query, 'url' => 'http://loinc.org/vs', 'count' => 100];
                 $url = '/ValueSet/$expand';
                 $processFunction = function ($data) {
                     $result = [];
@@ -708,10 +718,14 @@ EOD;
         }
         $this->recordFhirSuccess();
         $result = $processFunction(json_decode($result_json, true));
-        // Defensive cap, independent of whatever _count/$count the request above
-        // asked for: confirmed live that a FHIR server can ignore that entirely
-        // for some query shapes - a SNOMED CT "isa" search for a common term
-        // (e.g. "neopl") returned 8,300+ matches instead of the requested 20.
+        // Defensive cap, kept even now that every $expand call above sends the
+        // correctly-named 'count' parameter (an earlier version of this method
+        // sent '_count', the REST search-result modifier, which a $expand
+        // *operation* silently ignores - confirmed live: a SNOMED CT "isa"
+        // search for a common term, e.g. "neopl", returned 8,300+ matches with
+        // '_count=20' but exactly 20 with 'count=20'). A server is still free
+        // to ignore 'count' too, or a future edit could reintroduce the same
+        // parameter-name mistake, so this stays as a second line of defense.
         // Every branch above already only ever intends ~20 (loinc_answer's
         // 'filter' sub-case already self-limits this way, inline) - the
         // Online Designer's autocomplete widget locks up the browser tab for
