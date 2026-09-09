@@ -174,6 +174,12 @@
     "find-valueset",
     "get-valueset-info"
   ],
+  "action-tags": [
+    {
+      "tag": "@FHIR-ONTOLOGY-HIDECHOICE",
+      "description": "<b>@FHIR-ONTOLOGY-HIDECHOICE='code1,code2'</b><br>For a field using this module's FHIR ontology support, hides the listed codes so they never appear as selectable options in the field's autocomplete search. Codes are a comma-separated list, matched against the FHIR code only - not the code system, so a code shared by two systems in the same ValueSet cannot be hidden selectively.<br>This module also recognizes the older <code>@HIDECHOICE</code> tag name for the same purpose (for backward compatibility with existing fields); it isn't listed separately here because it collides with REDCap's own built-in @HIDECHOICE tag for standard choice fields, which this popup always shows instead."
+    }
+  ],
   "compatibility": {
     "php-version-min": "8.0.0"
   }

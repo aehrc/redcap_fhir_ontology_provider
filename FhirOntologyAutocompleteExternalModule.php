@@ -343,37 +343,25 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 
     function getHideChoice()
     {
-        // $Proj must be pulled in explicitly. Without this it is always null inside
-        // the method, so the in-memory fast path below never runs and every single
-        // keystroke falls through to a full getDataDictionary() call.
-        global $Proj;
-
-        $codesToHide=[];
-        if (isset($_GET['field'])){
-            $field = $_GET['field'];
-            $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
-            $annotations = null;
-            if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
-                    && isset($Proj->metadata[$field])) {
-                // field_annotation is NULL for un-annotated fields, which is the common
-                // case - take the in-memory path on field presence, not on the annotation
-                // existing, or every un-annotated field falls back to a full dictionary load
-                $annotations = isset($Proj->metadata[$field]['field_annotation'])
-                    ? $Proj->metadata[$field]['field_annotation']
-                    : null;
-            }
-            else if ($project_id !== null){
-                $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
-                $annotations = isset($dd_array[$field]['field_annotation'])
-                    ? $dd_array[$field]['field_annotation']
-                    : null;
-            }
-            if ($annotations) {
+        $codesToHide = [];
+        $annotations = $this->getFieldAnnotation();
+        if ($annotations) {
+            // @HIDECHOICE is REDCap core's own built-in action tag (for hiding
+            // options on real choice fields); this module repurposes the same
+            // name for a text-type FHIR autocomplete field, which core's own
+            // implementation never touches. Because it reuses a core tag name,
+            // it can never be registered in the "@ Action Tags" popup (see
+            // Design/action_tag_explain.php - a module tag colliding with a
+            // built-in one is silently dropped, not shown). @FHIR-ONTOLOGY-HIDECHOICE
+            // is a second, equivalent, non-colliding tag name that can be
+            // registered there; both are recognized and merged so existing
+            // fields using @HIDECHOICE keep working unchanged.
+            foreach (['@HIDECHOICE', '@FHIR-ONTOLOGY-HIDECHOICE'] as $tagName) {
                 $offset = 0;
-                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
+                while (preg_match("/" . preg_quote($tagName, '/') . "='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
                     $listedCodesStr = $matches[1][0];
                     $listedCodes = explode(',', $listedCodesStr);
-                    foreach($listedCodes as $code){
+                    foreach ($listedCodes as $code) {
                         array_push($codesToHide, trim($code));
                     }
                     $offset = $matches[0][1] + strlen($matches[0][0]);
@@ -382,6 +370,46 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         }
 
         return $codesToHide;
+    }
+
+    /**
+     * Returns the field currently being searched's raw field_annotation string,
+     * or null if there isn't one (or no field is being searched at all). Shared
+     * by getHideChoice() and (in the sibling @ONTOLOGY-OPTIONS work) getSearchOptions() -
+     * both need "what does this field's annotation say" without paying for a
+     * full data dictionary reload on every autocomplete keystroke.
+     */
+    private function getFieldAnnotation()
+    {
+        // $Proj must be pulled in explicitly. Without this it is always null inside
+        // the method, so the in-memory fast path below never runs and every single
+        // keystroke falls through to a full getDataDictionary() call.
+        global $Proj;
+
+        if (!isset($_GET['field'])) {
+            return null;
+        }
+        $field = $_GET['field'];
+        $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
+
+        if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
+                && isset($Proj->metadata[$field])) {
+            // field_annotation is NULL for un-annotated fields, which is the common
+            // case - take the in-memory path on field presence, not on the annotation
+            // existing, or every un-annotated field falls back to a full dictionary load.
+            // $Proj->metadata stores this under 'misc' (the raw DB column name), unlike
+            // getDataDictionary()'s array below, which normalises it to 'field_annotation'.
+            return isset($Proj->metadata[$field]['misc'])
+                ? $Proj->metadata[$field]['misc']
+                : null;
+        }
+        if ($project_id !== null){
+            $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
+            return isset($dd_array[$field]['field_annotation'])
+                ? $dd_array[$field]['field_annotation']
+                : null;
+        }
+        return null;
     }
 
 

@@ -244,7 +244,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'some_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['some_field'] = ['field_annotation' => "@HIDECHOICE='C1'"];
+        $GLOBALS['Proj']->metadata['some_field'] = ['misc' => "@HIDECHOICE='C1'"];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
                 'contains' => [
@@ -271,7 +271,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['pid'] = '17';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['my_field'] = ['field_annotation' => "@HIDECHOICE='A,B'"];
+        $GLOBALS['Proj']->metadata['my_field'] = ['misc' => "@HIDECHOICE='A,B'"];
 
         $hidden = $this->module->getHideChoice();
 
@@ -285,7 +285,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['pid'] = '99';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17'; // a different project than requested
-        $GLOBALS['Proj']->metadata['my_field'] = ['field_annotation' => "@HIDECHOICE='WRONG'"];
+        $GLOBALS['Proj']->metadata['my_field'] = ['misc' => "@HIDECHOICE='WRONG'"];
         \REDCap::$dataDictionary = ['my_field' => ['field_annotation' => "@HIDECHOICE='A'"]];
 
         $hidden = $this->module->getHideChoice();
@@ -303,7 +303,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         // keystroke.
         $_GET['field'] = 'plain_field';
         $GLOBALS['Proj'] = new \Project();
-        $GLOBALS['Proj']->metadata['plain_field'] = ['field_annotation' => null];
+        $GLOBALS['Proj']->metadata['plain_field'] = ['misc' => null];
 
         $hidden = $this->module->getHideChoice();
 
@@ -314,6 +314,54 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
     public function testGetHideChoiceReturnsEmptyWhenNoFieldRequested(): void
     {
         $this->assertSame([], $this->module->getHideChoice());
+    }
+
+    public function testGetHideChoiceFastPathReadsMiscKeyNotFieldAnnotationKey(): void
+    {
+        // Regression: $Proj->metadata[$field] stores the annotation under the
+        // raw DB column name 'misc', unlike getDataDictionary()'s array (which
+        // normalises it to 'field_annotation'). An earlier version of the fast
+        // path read 'field_annotation' here too, so it silently returned no
+        // annotation - and therefore no hidden codes - for every real request,
+        // despite the annotation genuinely being present in $Proj->metadata.
+        $_GET['field'] = 'my_field';
+        $_GET['pid'] = '17';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['my_field'] = ['misc' => "@HIDECHOICE='A'"];
+
+        $hidden = $this->module->getHideChoice();
+
+        $this->assertSame(['A'], $hidden);
+        $this->assertSame(0, \REDCap::$getDataDictionaryCallCount, 'the in-memory fast path must not fall through to getDataDictionary()');
+    }
+
+    // --- @FHIR-ONTOLOGY-HIDECHOICE ---
+    // A second, non-colliding tag name for the same purpose as @HIDECHOICE -
+    // see the "@HIDECHOICE never actually worked..." README section for why.
+
+    public function testGetHideChoiceRecognizesFhirOntologyHideChoiceTag(): void
+    {
+        $_GET['field'] = 'my_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->metadata['my_field'] = ['misc' => "@FHIR-ONTOLOGY-HIDECHOICE='X,Y'"];
+
+        $hidden = $this->module->getHideChoice();
+
+        $this->assertSame(['X', 'Y'], $hidden);
+    }
+
+    public function testGetHideChoiceMergesBothTagNamesWhenBothPresent(): void
+    {
+        $_GET['field'] = 'my_field';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->metadata['my_field'] = [
+            'misc' => "@HIDECHOICE='A' @FHIR-ONTOLOGY-HIDECHOICE='B'",
+        ];
+
+        $hidden = $this->module->getHideChoice();
+
+        $this->assertSame(['A', 'B'], $hidden);
     }
 
     // --- validateSettings() ---
