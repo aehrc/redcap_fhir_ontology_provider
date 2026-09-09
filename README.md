@@ -196,8 +196,7 @@ The @HIDECHOICE action tag is specified at a field level, the values will only b
 action tag is specified for. The set of values to hide is defined using a comma separated list of codes for the
 values which should be hidden. The value is matched against the FHIR code only, it does not consider the system
 of the value. If a valueset contains multiple values with the same code but different systems, then this cannot be
-differentiated. The module considers all @HIDECHOICE entries found in the annotations property of the
-field. The module will not try to expand piped variables in the choice list. 
+differentiated. The module considers all @HIDECHOICE entries found in the annotations property of the field.
 ```text
 @HIDECHOICE='code1,code2'
 ```
@@ -213,6 +212,17 @@ lists are merged):
 ```text
 @FHIR-ONTOLOGY-HIDECHOICE='code1,code2'
 ```
+
+**Piping is not supported, and not currently possible, in `@HIDECHOICE`'s or `@FHIR-ONTOLOGY-HIDECHOICE`'s
+argument** (e.g. `@HIDECHOICE='[other_field]'` to hide a code chosen by another field's answer). REDCap core's own
+built-in `@HIDECHOICE` resolves piping in its argument via `Piping::replaceVariablesInLabel($text, $record,
+$event_id, $instance, ...)`, which needs to know which record is currently being edited. This module's field-level
+tags are read from inside `DataEntry/web_service_auto_suggest.php` - the same real endpoint every search on this
+field hits - and that endpoint's request never carries a record, event, or instance identifier at all; REDCap
+core's own front-end JS only ever sends `term`, `field`, and `pid` to it. There is no record context available to
+pipe against from here, regardless of how this module parses the tag, so this isn't a missing feature so much as a
+limitation of the integration point itself - it would only become possible if a future REDCap version started
+including record context in that request.
 
 
 ### Label Cache Issue
