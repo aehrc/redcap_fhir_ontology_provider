@@ -37,17 +37,17 @@ dialog) discards whatever was being reviewed and leaves the previously saved sel
 The value saved against a field (`FHIR:<valueset-url>`) is exactly the same as before this change; only the Online
 Designer's own UI for choosing it is different. Fields configured under the old widget need no migration.
 
-### @ONTOLOGY-OPTIONS action tag
+### @FHIR-ONTOLOGY-OPTIONS action tag
 
 - ***Field-level control over search-all, stored value format, and priority codes***
-A new `@ONTOLOGY-OPTIONS` action tag lets a project designer opt an individual field into `return-all` (browse a
+A new `@FHIR-ONTOLOGY-OPTIONS` action tag lets a project designer opt an individual field into `return-all` (browse a
 small answer-list ValueSet without needing to guess its exact wording), `code-template` (override the stored
 value's format), and `priority-codes` (push specific codes to the top of results) - see
-[@ONTOLOGY-OPTIONS support](#ontology-options-support) below for the full syntax and worked examples.
+[@FHIR-ONTOLOGY-OPTIONS support](#fhir-ontology-options-support) below for the full syntax and worked examples.
 - ***The Online Designer's "Select FHIR ValueSet" dialog now suggests it automatically***
 When a previewed ValueSet is small (20 entries or fewer) and/or confirmed to use only one code system - either a
 known single-system shape (a SNOMED CT implicit valueset, or a LOINC implicit answer list) or every entry actually
-returned - the dialog shows a suggested `@ONTOLOGY-OPTIONS` tag with a "Copy" button, ready to paste into the
+returned - the dialog shows a suggested `@FHIR-ONTOLOGY-OPTIONS` tag with a "Copy" button, ready to paste into the
 field's own Action Tags / Field Annotation box.
 
 ### Online Designer ontology picker now uses REDCap's module.ajax()
@@ -216,14 +216,14 @@ field. The module will not try to expand piped variables in the choice list.
 ```
 
 
-### @ONTOLOGY-OPTIONS support
-`@ONTOLOGY-OPTIONS` is a field-level action tag (same convention as `@HIDECHOICE` above) that controls how the
+### @FHIR-ONTOLOGY-OPTIONS support
+`@FHIR-ONTOLOGY-OPTIONS` is a field-level action tag (same convention as `@HIDECHOICE` above) that controls how the
 Online Designer's data-entry autocomplete search behaves for that specific field. It takes a **semicolon**-separated
 list of options - not comma-separated like `@HIDECHOICE` - because one of the options (`priority-codes`) needs its
 own comma-separated list of codes, and a plain comma-separated option list would make that ambiguous to split.
 Options are combined in one tag:
 ```text
-@ONTOLOGY-OPTIONS='return-all;code-template=${CODE};priority-codes=code1,code2'
+@FHIR-ONTOLOGY-OPTIONS='return-all;code-template=${CODE};priority-codes=code1,code2'
 ```
 Unrecognized options (or the whole tag being malformed) are silently ignored, rather than causing an error - a
 mistyped option just means that option doesn't apply, not a broken field.

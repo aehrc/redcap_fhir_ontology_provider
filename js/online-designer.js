@@ -126,7 +126,7 @@ var SINGLE_SYSTEM_URL_PATTERNS = [
 ];
 
 /**
- * Recommends an @ONTOLOGY-OPTIONS tag for this ValueSet from data the dialog
+ * Recommends an @FHIR-ONTOLOGY-OPTIONS tag for this ValueSet from data the dialog
  * already has (no extra request), or null if neither option clearly applies.
  * Two independent signals, each contributing its own option to the tag:
  *
@@ -168,7 +168,7 @@ function computeOntologyOptionsRecommendation(valueSetUrl, data) {
   if (!tagOptions.length) {
     return null;
   }
-  return {messages: messages, tag: "@ONTOLOGY-OPTIONS='" + tagOptions.join(';') + "'"};
+  return {messages: messages, tag: "@FHIR-ONTOLOGY-OPTIONS='" + tagOptions.join(';') + "'"};
 }
 
 function clearOntologyOptionsRecommendation() {

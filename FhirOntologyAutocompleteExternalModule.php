@@ -345,7 +345,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         }
 
         // need to add the system as codes are not unique in SCT - ${CODE}|${SYSTEM}
-        // is the default when no @ONTOLOGY-OPTIONS code-template is set, exactly
+        // is the default when no @FHIR-ONTOLOGY-OPTIONS code-template is set, exactly
         // matching this method's previous unconditional $code . "|" . $system.
         $codeTemplate = $searchOptions['code-template'] !== null ? $searchOptions['code-template'] : '${CODE}|${SYSTEM}';
         $results = array();
@@ -369,7 +369,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 
     /**
      * Reorders $entries (each ['code'=>..., 'system'=>..., 'display'=>...])
-     * per the field's @ONTOLOGY-OPTIONS: priority-codes sorts first (in the
+     * per the field's @FHIR-ONTOLOGY-OPTIONS: priority-codes sorts first (in the
      * order listed, code only - not system, matching
      * advanced_fhir_ontology_provider's exact precedent), then, among the
      * rest, return-all's match-ranking (code/display case-insensitively
@@ -430,9 +430,11 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                 && isset($Proj->metadata[$field])) {
             // field_annotation is NULL for un-annotated fields, which is the common
             // case - take the in-memory path on field presence, not on the annotation
-            // existing, or every un-annotated field falls back to a full dictionary load
-            return isset($Proj->metadata[$field]['field_annotation'])
-                ? $Proj->metadata[$field]['field_annotation']
+            // existing, or every un-annotated field falls back to a full dictionary load.
+            // $Proj->metadata stores this under 'misc' (the raw DB column name), unlike
+            // getDataDictionary()'s array below, which normalises it to 'field_annotation'.
+            return isset($Proj->metadata[$field]['misc'])
+                ? $Proj->metadata[$field]['misc']
                 : null;
         }
         if ($project_id !== null){
@@ -464,7 +466,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
     }
 
     /**
-     * Parses @ONTOLOGY-OPTIONS='...' from the current field's annotation into
+     * Parses @FHIR-ONTOLOGY-OPTIONS='...' from the current field's annotation into
      * ['return-all' => bool, 'code-template' => string|null, 'priority-codes' => string[]].
      *
      * Options are semicolon-separated, not comma-separated like @HIDECHOICE -
@@ -484,7 +486,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
             return $options;
         }
         $offset = 0;
-        while (preg_match("/@ONTOLOGY-OPTIONS='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
+        while (preg_match("/@FHIR-ONTOLOGY-OPTIONS='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
             $this->applySearchOptionTokens($matches[1][0], $options);
             $offset = $matches[0][1] + strlen($matches[0][0]);
         }

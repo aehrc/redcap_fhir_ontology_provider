@@ -244,7 +244,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'some_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['some_field'] = ['field_annotation' => "@HIDECHOICE='C1'"];
+        $GLOBALS['Proj']->metadata['some_field'] = ['misc' => "@HIDECHOICE='C1'"];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
                 'contains' => [
@@ -260,10 +260,10 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertArrayHasKey('C2|sys', $results);
     }
 
-    // --- searchOntology() @ONTOLOGY-OPTIONS ---------------------------------
+    // --- searchOntology() @FHIR-ONTOLOGY-OPTIONS ---------------------------------
     // Existing searchOntology() tests above (e.g.
     // testSearchOntologySkipsEntriesWithNoCodeAndDefaultsMissingDisplayToCode)
-    // run with no @ONTOLOGY-OPTIONS tag and already assert the exact
+    // run with no @FHIR-ONTOLOGY-OPTIONS tag and already assert the exact
     // "code|system" stored format - they double as the regression guard that
     // the code-template default is byte-identical to the old hardcoded
     // $code . "|" . $system.
@@ -274,7 +274,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'chips_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['chips_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='return-all'"];
+        $GLOBALS['Proj']->metadata['chips_field'] = ['misc' => "@FHIR-ONTOLOGY-OPTIONS='return-all'"];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
                 'contains' => [
@@ -300,7 +300,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'chips_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['chips_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='return-all'"];
+        $GLOBALS['Proj']->metadata['chips_field'] = ['misc' => "@FHIR-ONTOLOGY-OPTIONS='return-all'"];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
                 'contains' => [
@@ -321,7 +321,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'bare_code_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['bare_code_field'] = ['field_annotation' => '@ONTOLOGY-OPTIONS=\'code-template=${CODE}\''];
+        $GLOBALS['Proj']->metadata['bare_code_field'] = ['misc' => '@FHIR-ONTOLOGY-OPTIONS=\'code-template=${CODE}\''];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
                 'contains' => [
@@ -342,7 +342,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'priority_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['priority_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='priority-codes=C3,C1'"];
+        $GLOBALS['Proj']->metadata['priority_field'] = ['misc' => "@FHIR-ONTOLOGY-OPTIONS='priority-codes=C3,C1'"];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
                 'contains' => [
@@ -366,7 +366,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'combo_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['combo_field'] = ['field_annotation' => "@ONTOLOGY-OPTIONS='return-all;priority-codes=C2'"];
+        $GLOBALS['Proj']->metadata['combo_field'] = ['misc' => "@FHIR-ONTOLOGY-OPTIONS='return-all;priority-codes=C2'"];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
                 'contains' => [
@@ -390,7 +390,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
         $GLOBALS['Proj']->metadata['hide_and_options_field'] = [
-            'field_annotation' => "@HIDECHOICE='C1' @ONTOLOGY-OPTIONS='return-all'",
+            'misc' => "@HIDECHOICE='C1' @FHIR-ONTOLOGY-OPTIONS='return-all'",
         ];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
@@ -417,7 +417,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
         $GLOBALS['Proj']->metadata['hide_and_priority_field'] = [
-            'field_annotation' => "@HIDECHOICE='X' @ONTOLOGY-OPTIONS='priority-codes=X,Y'",
+            'misc' => "@HIDECHOICE='X' @FHIR-ONTOLOGY-OPTIONS='priority-codes=X,Y'",
         ];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
@@ -443,7 +443,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
         $GLOBALS['Proj']->metadata['malformed_field'] = [
-            'field_annotation' => "@ONTOLOGY-OPTIONS='not-a-real-option;;also-bogus=1'",
+            'misc' => "@FHIR-ONTOLOGY-OPTIONS='not-a-real-option;;also-bogus=1'",
         ];
         FakeHttpTransport::$response = json_encode([
             'expansion' => [
@@ -460,13 +460,13 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertSame(['C1|sys' => 'One'], $results);
     }
 
-    // --- getSearchOptions() / @ONTOLOGY-OPTIONS parsing ---------------------
+    // --- getSearchOptions() / @FHIR-ONTOLOGY-OPTIONS parsing ---------------------
 
     public function testGetSearchOptionsDefaultsWhenNoTag(): void
     {
         $_GET['field'] = 'plain_field';
         $GLOBALS['Proj'] = new \Project();
-        $GLOBALS['Proj']->metadata['plain_field'] = ['field_annotation' => null];
+        $GLOBALS['Proj']->metadata['plain_field'] = ['misc' => null];
 
         $options = $this->module->getSearchOptions();
 
@@ -478,7 +478,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'my_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->metadata['my_field'] = [
-            'field_annotation' => '@ONTOLOGY-OPTIONS=\'return-all;code-template=${CODE};priority-codes=A, B\'',
+            'misc' => '@FHIR-ONTOLOGY-OPTIONS=\'return-all;code-template=${CODE};priority-codes=A, B\'',
         ];
 
         $options = $this->module->getSearchOptions();
@@ -493,7 +493,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'my_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->metadata['my_field'] = [
-            'field_annotation' => "@ONTOLOGY-OPTIONS='bogus-flag;unknown-key=value;return-all'",
+            'misc' => "@FHIR-ONTOLOGY-OPTIONS='bogus-flag;unknown-key=value;return-all'",
         ];
 
         $options = $this->module->getSearchOptions();
@@ -510,7 +510,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['field'] = 'my_field';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->metadata['my_field'] = [
-            'field_annotation' => "@ONTOLOGY-OPTIONS='return-all' @ONTOLOGY-OPTIONS='priority-codes=A'",
+            'misc' => "@FHIR-ONTOLOGY-OPTIONS='return-all' @FHIR-ONTOLOGY-OPTIONS='priority-codes=A'",
         ];
 
         $options = $this->module->getSearchOptions();
@@ -530,11 +530,32 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['pid'] = '17';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17';
-        $GLOBALS['Proj']->metadata['my_field'] = ['field_annotation' => "@HIDECHOICE='A,B'"];
+        $GLOBALS['Proj']->metadata['my_field'] = ['misc' => "@HIDECHOICE='A,B'"];
 
         $hidden = $this->module->getHideChoice();
 
         $this->assertSame(['A', 'B'], $hidden);
+        $this->assertSame(0, \REDCap::$getDataDictionaryCallCount, 'the in-memory fast path must not fall through to getDataDictionary()');
+    }
+
+    public function testGetFieldAnnotationFastPathReadsMiscKeyNotFieldAnnotationKey(): void
+    {
+        // Regression: $Proj->metadata[$field] stores the annotation under the
+        // raw DB column name 'misc', unlike getDataDictionary()'s array (which
+        // normalises it to 'field_annotation'). An earlier version of the fast
+        // path read 'field_annotation' here too, so it silently returned null
+        // for every real request instead of falling through to the (correct)
+        // getDataDictionary() branch - confirmed live against project 16's
+        // 'loinc' field, where @FHIR-ONTOLOGY-OPTIONS was saved but never applied.
+        $_GET['field'] = 'my_field';
+        $_GET['pid'] = '17';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17';
+        $GLOBALS['Proj']->metadata['my_field'] = ['misc' => "@FHIR-ONTOLOGY-OPTIONS='return-all'"];
+
+        $options = $this->module->getSearchOptions();
+
+        $this->assertTrue($options['return-all']);
         $this->assertSame(0, \REDCap::$getDataDictionaryCallCount, 'the in-memory fast path must not fall through to getDataDictionary()');
     }
 
@@ -544,7 +565,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $_GET['pid'] = '99';
         $GLOBALS['Proj'] = new \Project();
         $GLOBALS['Proj']->project_id = '17'; // a different project than requested
-        $GLOBALS['Proj']->metadata['my_field'] = ['field_annotation' => "@HIDECHOICE='WRONG'"];
+        $GLOBALS['Proj']->metadata['my_field'] = ['misc' => "@HIDECHOICE='WRONG'"];
         \REDCap::$dataDictionary = ['my_field' => ['field_annotation' => "@HIDECHOICE='A'"]];
 
         $hidden = $this->module->getHideChoice();
@@ -562,7 +583,7 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         // keystroke.
         $_GET['field'] = 'plain_field';
         $GLOBALS['Proj'] = new \Project();
-        $GLOBALS['Proj']->metadata['plain_field'] = ['field_annotation' => null];
+        $GLOBALS['Proj']->metadata['plain_field'] = ['misc' => null];
 
         $hidden = $this->module->getHideChoice();
 
