@@ -545,8 +545,14 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
 
         $this->module->findValueSet('refset', 'term');
 
-        $this->assertStringContainsString('count=20', FakeHttpTransport::$calls[0]['url']);
-        $this->assertStringNotContainsString('_count=', FakeHttpTransport::$calls[0]['url']);
+        // parse_str(), not assertStringContainsString('count=20', ...) - '_count=20'
+        // itself contains the substring 'count=20', so a substring check alone
+        // passes whether the bug is present or fixed; only actually parsing the
+        // query string can tell 'count' and '_count' apart as distinct parameters.
+        parse_str(parse_url(FakeHttpTransport::$calls[0]['url'], PHP_URL_QUERY), $sentParams);
+        $this->assertArrayHasKey('count', $sentParams);
+        $this->assertSame('20', $sentParams['count']);
+        $this->assertArrayNotHasKey('_count', $sentParams);
     }
 
     public function testFindValueSetIsaSendsCountNotUnderscoreCount(): void
@@ -557,8 +563,10 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
 
         $this->module->findValueSet('isa', 'term');
 
-        $this->assertStringContainsString('count=20', FakeHttpTransport::$calls[0]['url']);
-        $this->assertStringNotContainsString('_count=', FakeHttpTransport::$calls[0]['url']);
+        parse_str(parse_url(FakeHttpTransport::$calls[0]['url'], PHP_URL_QUERY), $sentParams);
+        $this->assertArrayHasKey('count', $sentParams);
+        $this->assertSame('20', $sentParams['count']);
+        $this->assertArrayNotHasKey('_count', $sentParams);
     }
 
     public function testFindValueSetLoincAnswerOntoserverSendsCountNotUnderscoreCount(): void
@@ -583,8 +591,10 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
 
         $this->module->findValueSet('loinc_answer', 'term');
 
-        $this->assertStringContainsString('count=100', FakeHttpTransport::$calls[0]['url']);
-        $this->assertStringNotContainsString('_count=', FakeHttpTransport::$calls[0]['url']);
+        parse_str(parse_url(FakeHttpTransport::$calls[0]['url'], PHP_URL_QUERY), $sentParams);
+        $this->assertArrayHasKey('count', $sentParams);
+        $this->assertSame('100', $sentParams['count']);
+        $this->assertArrayNotHasKey('_count', $sentParams);
     }
 
     // --- redcap_module_ajax() ---
