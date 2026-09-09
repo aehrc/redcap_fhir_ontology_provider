@@ -194,8 +194,10 @@ above). Clicking "Change..." opens one dialog containing:
 - an autocomplete search box driven by the search-type above, for finding a ValueSet without already knowing its URL
 - **Or enter a ValueSet URL directly:** a text input holding the URI of the ValueSet under review - filled in
   automatically by picking an autocomplete result, or editable directly if the URL is already known
-- a details panel showing the reviewed ValueSet's URL/name/version/status/expansion count, and a table of its first
-  entries (Display/Code/System)
+- a details panel showing the reviewed ValueSet's URL/name/version/status/expansion count, a suggested
+  `@FHIR-ONTOLOGY-OPTIONS` tag when the ValueSet looks like a good fit for `return-all` (see
+  [@FHIR-ONTOLOGY-OPTIONS support](#fhir-ontology-options-support) below), and a table of its first entries
+  (Display/Code/System)
 - **"Use this ValueSet"**/**"Cancel"** buttons - picking a search result or typing a URL only loads that ValueSet's
   details for review; the field's saved selection only changes once "Use this ValueSet" is clicked, and "Cancel" (or
   closing the dialog) discards the review and leaves the previously saved selection untouched
