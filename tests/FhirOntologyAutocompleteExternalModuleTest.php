@@ -523,6 +523,70 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertCount(20, $result);
     }
 
+    // --- findValueSet() $expand count parameter ---
+    // Regression coverage: ValueSet/$expand is a FHIR *operation*, whose count
+    // parameter is 'count' - not '_count', the REST search-result modifier
+    // used by plain resource searches (the 'name'/'codesystem' branches,
+    // which correctly use '_count' against /ValueSet and /CodeSystem
+    // respectively). Confirmed live against the real configured Ontoserver:
+    // '_count=20' against $expand is silently ignored (the server returns
+    // its full, unbounded result instead), while 'count=20' is honored
+    // exactly. This was the actual root cause of the "isa" lockup bug -
+    // array_slice() above only trims the response after an unbounded
+    // expansion has already been computed and transmitted; sending the
+    // right parameter avoids that expansion (and its cost to the FHIR
+    // server) in the first place.
+
+    public function testFindValueSetRefsetSendsCountNotUnderscoreCount(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['snomed_support'] = true;
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->findValueSet('refset', 'term');
+
+        $this->assertStringContainsString('count=20', FakeHttpTransport::$calls[0]['url']);
+        $this->assertStringNotContainsString('_count=', FakeHttpTransport::$calls[0]['url']);
+    }
+
+    public function testFindValueSetIsaSendsCountNotUnderscoreCount(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['snomed_support'] = true;
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->findValueSet('isa', 'term');
+
+        $this->assertStringContainsString('count=20', FakeHttpTransport::$calls[0]['url']);
+        $this->assertStringNotContainsString('_count=', FakeHttpTransport::$calls[0]['url']);
+    }
+
+    public function testFindValueSetLoincAnswerOntoserverSendsCountNotUnderscoreCount(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['loinc_support'] = 'ontoserver';
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->findValueSet('loinc_answer', 'term');
+
+        $sentParams = json_decode(FakeHttpTransport::$calls[0]['params'], true);
+        $names = array_column($sentParams['parameter'], 'name');
+        $this->assertContains('count', $names);
+        $this->assertNotContains('_count', $names);
+    }
+
+    public function testFindValueSetLoincAnswerFilterSendsCountNotUnderscoreCount(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['loinc_support'] = 'filter';
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->findValueSet('loinc_answer', 'term');
+
+        $this->assertStringContainsString('count=100', FakeHttpTransport::$calls[0]['url']);
+        $this->assertStringNotContainsString('_count=', FakeHttpTransport::$calls[0]['url']);
+    }
+
     // --- redcap_module_ajax() ---
     // Backs getOnlineDesignerSection()'s two ajax calls - see config.json's
     // auth-ajax-actions. Replaces the old FindValueSetService.php page's logic
