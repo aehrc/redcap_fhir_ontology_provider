@@ -688,7 +688,17 @@ EOD;
             return ['error' => 'The terminology server is not responding. Please try again shortly.'];
         }
         $this->recordFhirSuccess();
-        return $processFunction(json_decode($result_json, true));
+        $result = $processFunction(json_decode($result_json, true));
+        // Defensive cap, independent of whatever _count/$count the request above
+        // asked for: confirmed live that a FHIR server can ignore that entirely
+        // for some query shapes - a SNOMED CT "isa" search for a common term
+        // (e.g. "neopl") returned 8,300+ matches instead of the requested 20.
+        // Every branch above already only ever intends ~20 (loinc_answer's
+        // 'filter' sub-case already self-limits this way, inline) - the
+        // Online Designer's autocomplete widget locks up the browser tab for
+        // tens of seconds trying to render a dropdown that large, so this must
+        // hold regardless of server behavior, not just be a request hint.
+        return array_slice($result, 0, 20);
     }
 
     public function getValueSetInfo($valueSet)

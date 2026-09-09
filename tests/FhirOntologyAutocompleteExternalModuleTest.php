@@ -482,6 +482,47 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertSame('', $surveyHtml);
     }
 
+    // --- findValueSet() result cap ---
+    // Confirmed live against the real configured Ontoserver: an 'isa' search
+    // for a common term (e.g. "neopl", a full-text search across all of
+    // SNOMED CT) returned 8,300+ matches despite requesting _count=20 - the
+    // server does not always honor that for this query shape. Handing an
+    // uncapped list that large to the Online Designer's jQuery UI autocomplete
+    // widget locked up the browser tab for tens of seconds trying to render
+    // it (confirmed via a live CPU profile: main-thread time dominated by
+    // jQuery/Sizzle selector-engine internals processing the giant list).
+    // This cap must hold regardless of what the server actually returns, for
+    // every search type - not rely on _count being honored.
+
+    public function testFindValueSetCapsIsaResultsEvenWhenServerIgnoresCount(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['snomed_support'] = true;
+        $contains = [];
+        for ($i = 0; $i < 50; $i++) {
+            $contains[] = ['code' => "C$i", 'system' => 'sys', 'display' => "Match $i"];
+        }
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => $contains]]);
+
+        $result = $this->module->findValueSet('isa', 'term');
+
+        $this->assertCount(20, $result);
+    }
+
+    public function testFindValueSetCapAppliesToNameSearchToo(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $entries = [];
+        for ($i = 0; $i < 50; $i++) {
+            $entries[] = ['resource' => ['name' => "Name $i", 'url' => "http://example.test/vs$i"]];
+        }
+        FakeHttpTransport::$response = json_encode(['entry' => $entries]);
+
+        $result = $this->module->findValueSet('name', 'term');
+
+        $this->assertCount(20, $result);
+    }
+
     // --- redcap_module_ajax() ---
     // Backs getOnlineDesignerSection()'s two ajax calls - see config.json's
     // auth-ajax-actions. Replaces the old FindValueSetService.php page's logic
