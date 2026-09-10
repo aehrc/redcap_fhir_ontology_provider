@@ -448,17 +448,29 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 
     function getHideChoice()
     {
-        $codesToHide=[];
+        $codesToHide = [];
         $annotations = $this->getFieldAnnotation();
         if ($annotations) {
-            $offset = 0;
-            while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
-                $listedCodesStr = $matches[1][0];
-                $listedCodes = explode(',', $listedCodesStr);
-                foreach($listedCodes as $code){
-                    array_push($codesToHide, trim($code));
+            // @HIDECHOICE is REDCap core's own built-in action tag (for hiding
+            // options on real choice fields); this module repurposes the same
+            // name for a text-type FHIR autocomplete field, which core's own
+            // implementation never touches. Because it reuses a core tag name,
+            // it can never be registered in the "@ Action Tags" popup (see
+            // Design/action_tag_explain.php - a module tag colliding with a
+            // built-in one is silently dropped, not shown). @FHIR-ONTOLOGY-HIDECHOICE
+            // is a second, equivalent, non-colliding tag name that can be
+            // registered there; both are recognized and merged so existing
+            // fields using @HIDECHOICE keep working unchanged.
+            foreach (['@HIDECHOICE', '@FHIR-ONTOLOGY-HIDECHOICE'] as $tagName) {
+                $offset = 0;
+                while (preg_match("/" . preg_quote($tagName, '/') . "='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
+                    $listedCodesStr = $matches[1][0];
+                    $listedCodes = explode(',', $listedCodesStr);
+                    foreach ($listedCodes as $code) {
+                        array_push($codesToHide, trim($code));
+                    }
+                    $offset = $matches[0][1] + strlen($matches[0][0]);
                 }
-                $offset = $matches[0][1] + strlen($matches[0][0]);
             }
         }
 

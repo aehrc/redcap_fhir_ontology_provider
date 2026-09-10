@@ -176,6 +176,10 @@
   ],
   "action-tags": [
     {
+      "tag": "@FHIR-ONTOLOGY-HIDECHOICE",
+      "description": "<b>@FHIR-ONTOLOGY-HIDECHOICE='code1,code2'</b><br>For a field using this module's FHIR ontology support, hides the listed codes so they never appear as selectable options in the field's autocomplete search. Codes are a comma-separated list, matched against the FHIR code only - not the code system, so a code shared by two systems in the same ValueSet cannot be hidden selectively.<br>This module also recognizes the older <code>@HIDECHOICE</code> tag name for the same purpose (for backward compatibility with existing fields); it isn't listed separately here because it collides with REDCap's own built-in @HIDECHOICE tag for standard choice fields, which this popup always shows instead."
+    },
+    {
       "tag": "@FHIR-ONTOLOGY-OPTIONS",
       "description": "<b>@FHIR-ONTOLOGY-OPTIONS='option1;option2;...'</b><br>For a field using this module's FHIR ontology support, controls how the field's autocomplete search behaves. Semicolon-separated options (not comma-separated, since <code>priority-codes</code> needs its own comma-separated code list):<ul><li><b>return-all</b> - fetch the ValueSet's full/default expansion instead of filtering by the typed text, then rank matches locally. Intended only for small, fully-enumerated ValueSets (e.g. a short answer list) - it fetches the entire expansion on every search keystroke, so setting it on a large ValueSet (SNOMED CT, etc.) would be slow and wasteful.</li><li><b>code-template=${CODE}</b> (or <code>${SYSTEM}</code>) - overrides the format of the value stored for this field (default <code>${CODE}|${SYSTEM}</code>). Only use a code-only template when the field's ValueSet is known to use a single code system - see this module's README for the collision risk otherwise.</li><li><b>priority-codes=code1,code2</b> - sorts these FHIR codes to the top of search results whenever they appear, in the order listed.</li></ul>Example: <code>@FHIR-ONTOLOGY-OPTIONS='return-all;code-template=${CODE}'</code>"
     }
