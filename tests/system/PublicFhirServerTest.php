@@ -40,10 +40,10 @@ final class PublicFhirServerTest extends TestCase
     {
         if (!function_exists(__NAMESPACE__ . '\\usingRealHttpTransport')) {
             $this->fail(
-                'RealHttpFunctions.php was not loaded, so http_get()/http_post() are ' .
-                'still the unit suite\'s fakes. Run this suite via ' .
-                '`vendor/bin/phpunit -c phpunit.system.xml`, not by file path with ' .
-                'the default config.'
+                'RealHttpFunctions.php was not loaded, so sameHostUrl() and curl_*() ' .
+                'are still the unit suite\'s fakes rather than the real network. Run ' .
+                'this suite via `vendor/bin/phpunit -c phpunit.system.xml`, not by ' .
+                'file path with the default config.'
             );
         }
 
