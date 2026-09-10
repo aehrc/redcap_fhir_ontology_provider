@@ -269,10 +269,15 @@ mistyped option just means that option doesn't apply, not a broken field.
     filter, so nothing appears unless the typed text happens to textually match the server's `display` wording for
     an entry. For a small, fully-enumerated answer-list ValueSet (a handful of values, e.g. a frequency-of-use
     scale), this makes it hard to actually browse the options. With `return-all` set, the field's search instead
-    fetches the ValueSet's full/default expansion (no server-side text filter) and ranks entries locally - anything
-    whose code or display matches the typed text sorts first, everything else follows. **This option is intended
-    for small ValueSets only.** It fetches the entire expansion on every search keystroke rather than a filtered
-    subset, so setting it on a large ValueSet (SNOMED CT, etc.) would be slow and wasteful.
+    drops the server-side text filter and ranks entries locally - anything whose code or display matches the typed
+    text sorts first, everything else follows. **This option is intended for small ValueSets only, and does not
+    actually fetch every entry in the ValueSet: the server is still asked for at most the field's result limit
+    (20 by default), just without a filter.** An entry beyond that limit in the server's own ordering is never
+    fetched at all, so it can never appear locally-ranked as a match either, no matter how well its code or display
+    matches the typed text - the omission is silent, with no indication to the user that anything is missing.
+    Setting this on a ValueSet larger than the result limit therefore risks making some otherwise-valid entries
+    permanently unreachable by search; setting it on a large ValueSet (SNOMED CT, etc.) is also simply slow and
+    wasteful, since the full unfiltered request is repeated on every search keystroke.
   * ***code-template*** - Overrides the format of the value stored in REDCap for this field, the same way
     `advanced_fhir_ontology_provider`'s per-category `Code Template` setting does. Without this option, the stored
     value is `${CODE}|${SYSTEM}` (unchanged from previous versions of this module). The template replaces

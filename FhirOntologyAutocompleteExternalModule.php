@@ -266,7 +266,13 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         // Set 20 as default limit
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
-        $searchOptions = $this->getSearchOptions();
+        // Fetched once and passed to both getSearchOptions() and getHideChoice()
+        // below, rather than each independently calling getFieldAnnotation() -
+        // in the (uncommon) slow path where $Proj doesn't match the requested
+        // project, getFieldAnnotation() does a full getDataDictionary() reload,
+        // and this field is searched on every autocomplete keystroke.
+        $annotations = $this->getFieldAnnotation();
+        $searchOptions = $this->getSearchOptions($annotations);
         $priorityCodes = $searchOptions['priority-codes'];
 
         $fetchLimit = $result_limit;
@@ -321,7 +327,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         if (is_array($list) && isset($list['expansion']['contains'])) {
             $expansion = $list['expansion'];
             // Loop through results
-            $hideChoice = $this->getHideChoice();
+            $hideChoice = $this->getHideChoice($annotations);
             foreach ($expansion['contains'] as $this_item) {
 
                 // code and system are not guaranteed present by FHIR
@@ -446,10 +452,20 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         return null;
     }
 
-    function getHideChoice()
+    /**
+     * @param string|null|false $annotations Pass the field's already-fetched
+     *   annotation (getFieldAnnotation()'s return value, including null for
+     *   "no annotation") to skip re-fetching it - used by searchOntology(),
+     *   which also needs it for getSearchOptions(). Omit (or pass false,
+     *   which getFieldAnnotation() itself never returns) to have this method
+     *   fetch it itself, as every direct caller other than searchOntology() does.
+     */
+    function getHideChoice($annotations = false)
     {
         $codesToHide = [];
-        $annotations = $this->getFieldAnnotation();
+        if ($annotations === false) {
+            $annotations = $this->getFieldAnnotation();
+        }
         if ($annotations) {
             // @HIDECHOICE is REDCap core's own built-in action tag (for hiding
             // options on real choice fields); this module repurposes the same
@@ -489,11 +505,16 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
      * to "no options applied" rather than an error, and a future option name
      * added here is forward-compatible with older deployments that don't
      * understand it yet.
+     *
+     * @param string|null|false $annotations Same optional pre-fetched-annotation
+     *   parameter as getHideChoice() - see its docblock.
      */
-    function getSearchOptions()
+    function getSearchOptions($annotations = false)
     {
         $options = ['return-all' => false, 'code-template' => null, 'priority-codes' => []];
-        $annotations = $this->getFieldAnnotation();
+        if ($annotations === false) {
+            $annotations = $this->getFieldAnnotation();
+        }
         if (!$annotations) {
             return $options;
         }

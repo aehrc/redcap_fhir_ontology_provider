@@ -407,6 +407,40 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertArrayHasKey('C2|sys', $results);
     }
 
+    public function testSearchOntologyFetchesFieldAnnotationOnlyOnceEvenOnSlowPath(): void
+    {
+        // Regression: searchOntology() needs the field's annotation for both
+        // getSearchOptions() and getHideChoice() - it must fetch it once itself
+        // and pass it to both, not let each independently call
+        // getFieldAnnotation() again. On the fast (in-memory $Proj) path that's
+        // just a duplicated array lookup, but on this slow path (project_id
+        // mismatch) getFieldAnnotation() falls back to a full
+        // REDCap::getDataDictionary() reload - calling it twice per search
+        // would double that cost on every autocomplete keystroke.
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $_GET['field'] = 'my_field';
+        $_GET['pid'] = '99';
+        $GLOBALS['Proj'] = new \Project();
+        $GLOBALS['Proj']->project_id = '17'; // a different project than requested
+        \REDCap::$dataDictionary = [
+            'my_field' => ['field_annotation' => "@HIDECHOICE='C1' @FHIR-ONTOLOGY-OPTIONS='return-all'"],
+        ];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Hidden'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Shown'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('http://example.test/vs', 'nomatch', 20);
+
+        $this->assertArrayNotHasKey('C1|sys', $results, 'sanity check: @HIDECHOICE and @FHIR-ONTOLOGY-OPTIONS were both actually read');
+        $this->assertArrayHasKey('C2|sys', $results);
+        $this->assertSame(1, \REDCap::$getDataDictionaryCallCount);
+    }
+
     public function testSearchOntologyHideChoiceExcludesEvenWhenAlsoListedAsPriority(): void
     {
         // A code that is both hidden and priority-listed is excluded entirely -
