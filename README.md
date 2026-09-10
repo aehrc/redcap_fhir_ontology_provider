@@ -3,6 +3,11 @@
 The sections below give the full story behind each version's changes - why, not just what. For a terser,
 automatically generated commit-by-commit record, see [CHANGELOG.md](./CHANGELOG.md).
 
+## Requirements
+
+- PHP 8.0.0 or later
+- REDCap 8.8.1 or later, on External Module framework version 16 or later
+
 As part of release 8.8.1 of REDCap an extension point was added to allow external modules to become an 
 *'Ontology Provider'*. These act like the existing BioPortal ontology mechanism, but allow alternative sources.
 The main function of an ontology provider is to take a search term and return some match of code + display.
@@ -165,7 +170,8 @@ of LOINC in different servers.
 
 
 ## Using the module
-The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.5`
+The module code needs to be placed in a directory named `modules/fhir-ontology-provider_v<version>`, matching
+the version number of the release you downloaded (e.g. `modules/fhir-ontology-provider_v1.0.0`).
 
 The module should then show up as an external module.
 
