@@ -209,6 +209,68 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout']);
     }
 
+    // --- true end-to-end request timeout ---
+    // REDCap core's http_get()/http_post() only ever set curl's *connect*
+    // timeout (confirmed by reading Config/init_functions.php) - a server that
+    // accepts the connection and then stalls could still hold a web server
+    // process open indefinitely. This module now makes its own curl calls
+    // instead of delegating to core's, specifically to also set CURLOPT_TIMEOUT.
+
+    public function testHttpGetSetsBothConnectAndTotalTimeout(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['fhir_timeout'] = '7';
+        FakeHttpTransport::$response = 'ok';
+
+        $this->module->httpGet('https://ts.example.test/fhir/metadata', ['User-Agent: Redcap']);
+
+        $this->assertCount(1, FakeHttpTransport::$calls);
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout'], 'connect timeout');
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['total_timeout'], 'the new end-to-end timeout');
+    }
+
+    public function testHttpPostSetsBothConnectAndTotalTimeout(): void
+    {
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['fhir_timeout'] = '7';
+        FakeHttpTransport::$response = 'ok';
+
+        $this->module->httpPost(
+            'https://ts.example.test/fhir/ValueSet/$expand',
+            '{}',
+            'application/json',
+            ['User-Agent: Redcap'],
+            'https://ts.example.test/fhir'
+        );
+
+        $this->assertCount(1, FakeHttpTransport::$calls);
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout'], 'connect timeout');
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['total_timeout'], 'the new end-to-end timeout');
+    }
+
+    public function testHttpPostSendsContentTypeHeaderAlongsideCustomHeaders(): void
+    {
+        // Regression: REDCap core's own http_post() sets CURLOPT_HTTPHEADER for
+        // the content-type header, then - if custom headers are also present -
+        // overwrites it entirely with just those (curl_setopt() replaces, not
+        // merges), silently dropping the content-type header. This module's
+        // curlPostWithTotalTimeout() builds the header list once instead.
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        FakeHttpTransport::$response = 'ok';
+
+        $this->module->httpPost(
+            'https://ts.example.test/fhir/ValueSet/$expand',
+            '{"resourceType":"Parameters"}',
+            'application/json',
+            ['User-Agent: Redcap'],
+            'https://ts.example.test/fhir'
+        );
+
+        $sentHeaders = FakeHttpTransport::$calls[0]['headers'];
+        $this->assertContains('Content-Type: application/json', $sentHeaders);
+        $this->assertContains('User-Agent: Redcap', $sentHeaders);
+    }
+
     public function testSearchOntologyReturnsConfiguredNoResultFallbackOnGenuineEmptyResult(): void
     {
         $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';

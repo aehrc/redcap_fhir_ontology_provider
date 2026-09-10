@@ -939,24 +939,17 @@ EOD;
 
 
     /**
-     * Maximum number of seconds allowed to *connect* to the FHIR server; it bounds
-     * an unreachable or refusing host. REDCap core's http_get()/http_post() helpers
-     * set curl's connect timeout but not its total-time timeout, so this does not
-     * currently bound a server that accepts the connection and then stalls - that
-     * call can still hold a web server process open indefinitely. The exception is
-     * the file_get_contents fallback used when curl is unavailable, where the
-     * stream context 'timeout' option is a true end-to-end limit. Closing this gap
-     * on the curl path requires the module to issue its own curl requests with an
-     * explicit CURLOPT_TIMEOUT, which is planned follow-up work. The circuit breaker
-     * (see isCircuitOpen()/recordFhirFailureIfSlow()) helps for the common case where
-     * a slow or erroring server eventually returns - a slow response, a connection
-     * reset, a timeout enforced at the OS or proxy layer - since those calls do
-     * return and get counted. It does not help against a true indefinite hang:
-     * recordFhirFailureIfSlow() only runs after httpGet()/httpPost() returns, and a
-     * call that never returns is killed by PHP's own execution time limit first, so
-     * it is never recorded and never trips the breaker. Once the breaker does open,
-     * though, it stops all further calls outright, which is real protection against
-     * repeat failures of either kind.
+     * Maximum number of seconds allowed to connect to *and* fully complete a
+     * request to the FHIR server. Applied as both curl's connect timeout and its
+     * total-time timeout (see curlGetWithTotalTimeout()/curlPostWithTotalTimeout()),
+     * so a server that accepts the connection and then stalls can no longer hold a
+     * web server process open indefinitely - REDCap core's own http_get()/
+     * http_post() helpers only ever set the connect timeout, confirmed by reading
+     * Config/init_functions.php, which is why this module makes its own curl calls
+     * instead of delegating to them. The circuit breaker (see isCircuitOpen()/
+     * recordFhirFailureIfSlow()) remains useful on top of this for the stampede
+     * case - repeated slow failures from an unhealthy server - rather than for
+     * bounding any single call, which this timeout now does directly.
      */
     public function getFhirTimeout()
     {
@@ -1084,10 +1077,15 @@ EOD;
             return false;
         }
         $timeout = $this->getFhirTimeout();
-        // if curl isn't install the default version of http_get in init_functions doesn't include the headers.
-        if (function_exists('curl_init') || empty($headers)) {
-            return http_get($fullUrl, $timeout, '', $headers, null);
+        $curlResult = $this->curlGetWithTotalTimeout($fullUrl, $headers, $timeout);
+        if ($curlResult !== null) {
+            return $curlResult;
         }
+        // curl unavailable, or curl's own http_code was inconclusive (0) - REDCap
+        // core's own http_get() falls through to file_get_contents in exactly the
+        // same case, and its stream-context 'timeout' option is already a true
+        // end-to-end limit (unlike curl's CONNECTTIMEOUT-only default), so no
+        // further change is needed on this path.
         if (ini_get('allow_url_fopen')) {
             // Set http array for file_get_contents
             $headerText = '';
@@ -1117,6 +1115,60 @@ EOD;
         return $content;
     }
 
+    /**
+     * This module's own copy of REDCap core's http_get()'s curl path (see
+     * Config/init_functions.php), kept intentionally close to its option set,
+     * with one addition: CURLOPT_TIMEOUT, bounding the entire request rather than
+     * just the connect phase. Existing purely to close that one gap - if REDCap
+     * core's own curl handling changes, this module's copy does not follow it
+     * automatically and would need updating to match.
+     *
+     * @return string|false|null Response body on success; false on a definite
+     *   failure (curl reported 404/407/5xx); null if curl is unavailable, or
+     *   curl could not complete the request at all (http_code 0) - callers
+     *   should fall back to something else in that case, matching core's own
+     *   http_get()'s fallback to file_get_contents in exactly the same situation.
+     */
+    private function curlGetWithTotalTimeout($fullUrl, $headers, $timeout)
+    {
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+        $curl = curl_init();
+        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($curl, CURLOPT_AUTOREFERER, true);
+        curl_setopt($curl, CURLOPT_MAXREDIRS, 10);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($curl, CURLOPT_VERBOSE, 0);
+        curl_setopt($curl, CURLOPT_URL, $fullUrl);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($curl, CURLOPT_HTTPGET, true);
+        if (!sameHostUrl($fullUrl)) {
+            curl_setopt($curl, CURLOPT_PROXY, PROXY_HOSTNAME);
+            curl_setopt($curl, CURLOPT_PROXYUSERPWD, PROXY_USERNAME_PASSWORD);
+        }
+        curl_setopt($curl, CURLOPT_FRESH_CONNECT, 1);
+        if (is_numeric($timeout)) {
+            curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, $timeout);
+            // The one addition over core's own http_get(): bounds the whole
+            // request, not just the connect phase.
+            curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
+        }
+        if (!empty($headers) && is_array($headers)) {
+            curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
+        }
+        $response = curl_exec($curl);
+        $info = curl_getinfo($curl);
+        curl_close($curl);
+        if (isset($info['http_code']) && ($info['http_code'] == 404 || $info['http_code'] == 407 || $info['http_code'] >= 500)) {
+            return false;
+        }
+        if (isset($info['http_code']) && $info['http_code'] != 0) {
+            return $response;
+        }
+        return null;
+    }
+
     public function httpPost($fullUrl, $postData, $contentType, $headers, $baseOverride = null)
     {
         // The OAuth2 token endpoint is a different origin from the FHIR server by
@@ -1143,16 +1195,9 @@ EOD;
             return false;
         }
         $timeout = $this->getFhirTimeout();
-        // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
-        // but the curl version will overwrite the content type header if other headers are included.
-        if (function_exists('curl_init') && !empty($headers)
-                 && $contentType && $contentType != 'application/x-www-form-urlencoded'){
-            $fullHeaders = $headers;
-            $fullHeaders[] = 'Content-type: '.$contentType;
-            return http_post($fullUrl, $postData, $timeout, $contentType, '', $fullHeaders);
-        }
-        else if (function_exists('curl_init') || empty($headers)) {
-            return http_post($fullUrl, $postData, $timeout, $contentType, '', $headers);
+        $curlResult = $this->curlPostWithTotalTimeout($fullUrl, $postData, $contentType, $headers, $timeout);
+        if ($curlResult !== null) {
+            return $curlResult;
         }
         // If params are given as an array, then convert to query string format, else leave as is
         if ($contentType == 'application/json') {
@@ -1201,6 +1246,75 @@ EOD;
             }
         }
         return false;
+    }
+
+    /**
+     * This module's own copy of REDCap core's http_post()'s curl path (see
+     * Config/init_functions.php), kept intentionally close to its option set,
+     * with two differences: CURLOPT_TIMEOUT (see curlGetWithTotalTimeout()'s
+     * docblock - the same reasoning applies here), and building the final header
+     * list once rather than in two passes. Core's own http_post() first sets
+     * CURLOPT_HTTPHEADER for the content-type header (when not form-urlencoded),
+     * then - if custom headers are also present - overwrites it entirely with
+     * just those headers (curl_setopt() replaces, it does not merge), silently
+     * dropping the content-type header in that case; this module's own httpPost()
+     * used to work around exactly that by appending its own 'Content-type'
+     * header onto $headers before calling core's http_post(). Building the list
+     * once here removes the need for that workaround.
+     *
+     * @return string|false|null Same meaning as curlGetWithTotalTimeout()'s
+     *   return value - see its docblock.
+     */
+    private function curlPostWithTotalTimeout($fullUrl, $postData, $contentType, $headers, $timeout)
+    {
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+        if ($contentType == 'application/json') {
+            $paramString = (is_array($postData)) ? json_encode($postData) : $postData;
+        } elseif ($contentType == 'application/x-www-form-urlencoded') {
+            $paramString = (is_array($postData)) ? http_build_query($postData, '', '&') : $postData;
+        } else {
+            $paramString = $postData;
+        }
+        $curl = curl_init();
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($curl, CURLOPT_VERBOSE, 0);
+        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($curl, CURLOPT_AUTOREFERER, true);
+        curl_setopt($curl, CURLOPT_MAXREDIRS, 10);
+        curl_setopt($curl, CURLOPT_URL, $fullUrl);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'POST');
+        curl_setopt($curl, CURLOPT_POSTFIELDS, $paramString);
+        if (!sameHostUrl($fullUrl)) {
+            curl_setopt($curl, CURLOPT_PROXY, PROXY_HOSTNAME);
+            curl_setopt($curl, CURLOPT_PROXYUSERPWD, PROXY_USERNAME_PASSWORD);
+        }
+        curl_setopt($curl, CURLOPT_FRESH_CONNECT, 1);
+        if (is_numeric($timeout)) {
+            curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, $timeout);
+            curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
+        }
+        $finalHeaders = ($contentType && $contentType !== 'application/x-www-form-urlencoded')
+            ? ["Content-Type: $contentType", "Content-Length: " . strlen($paramString)]
+            : [];
+        if (!empty($headers) && is_array($headers)) {
+            $finalHeaders = array_merge($finalHeaders, $headers);
+        }
+        if (!empty($finalHeaders)) {
+            curl_setopt($curl, CURLOPT_HTTPHEADER, $finalHeaders);
+        }
+        $response = curl_exec($curl);
+        $info = curl_getinfo($curl);
+        curl_close($curl);
+        if (isset($info['http_code']) && ($info['http_code'] == 404 || $info['http_code'] == 407 || $info['http_code'] >= 500)) {
+            return false;
+        }
+        if (isset($info['http_code']) && $info['http_code'] != 0) {
+            return $response;
+        }
+        return null;
     }
 
 
