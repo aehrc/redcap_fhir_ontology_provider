@@ -101,20 +101,17 @@ The `FindValueSetService` page was previously declared as a no-auth page, meanin
 in to REDCap. Because the FHIR server is typically on an internal network while REDCap is internet facing, this
 allowed anonymous users to query the terminology server through REDCap and read its responses. The no-auth
 declaration has been removed; the online designer is unaffected because it never used the no-auth route.
-- ***Requests to the FHIR server now bound connection time***
-A new `FHIR request timeout (seconds)` setting (default 10) bounds how long REDCap waits to *connect* to the
-terminology server, protecting against an unreachable or refusing host. It does not currently bound a server that
-accepts the connection and then stalls: REDCap core's `http_get()`/`http_post()` helpers set curl's connect timeout
-but not its total-time timeout, so a hung response can still hold a web server process open indefinitely. The one
-exception is the `file_get_contents` fallback used when curl is unavailable, where the stream context `timeout`
-option is a true end-to-end limit. Closing that gap for the curl path requires the module to issue its own curl
-requests with an explicit `CURLOPT_TIMEOUT`, which is planned follow-up work. The circuit breaker below helps for
-the common case where a slow or erroring server *eventually* returns - a slow response, a connection reset, a
-timeout enforced at the OS or proxy layer - since those calls do return and get counted. It does not help against
-a true indefinite hang: the breaker is only informed after `httpGet()`/`httpPost()` returns, and a call that never
-returns is killed by PHP's own execution time limit first, so it is never recorded and never trips the breaker.
-Once the breaker does open, though, it stops all further calls outright, which is real protection against repeat
-failures of either kind.
+- ***Requests to the FHIR server now bound both connection time and total time***
+A `FHIR request timeout (seconds)` setting (default 10) bounds how long REDCap waits both to *connect* to the
+terminology server and to complete the entire request. REDCap core's own `http_get()`/`http_post()` helpers only
+ever set curl's connect timeout, not its total-time timeout (confirmed by reading `Config/init_functions.php`), so
+a server that accepts the connection and then stalls could still hold a web server process open indefinitely -
+this module now makes its own curl calls (`curlGetWithTotalTimeout()`/`curlPostWithTotalTimeout()`), deliberately
+kept close to core's own curl option set, with `CURLOPT_TIMEOUT` added on top. The `file_get_contents` fallback
+used when curl is unavailable already had a true end-to-end limit via its stream context `timeout` option, and is
+unaffected by this change. The circuit breaker below remains useful on top of this for the stampede case -
+repeated slow failures from an unhealthy server - rather than for bounding any single call, which this timeout now
+does directly.
 - ***Outbound FHIR requests are now constrained to the configured server***
 Every URL this module builds before sending a request is checked against the configured `FHIR API URL`: it must
 address the same origin and sit at or below its path. A request that would fall outside that (for example, one
@@ -178,7 +175,7 @@ The following site wide settings are available:
      * `https://tx.ontoserver.csiro.au/fhir` an Australian server with the Australian edition of SNOMED CT as its default. The server also contains LOINC and other code systems.
      * `https://snowstorm-fhir.snomedtools.org/fhir` is a test server hosted by snomed, it does not include LOINC or non-snomed code systems and valuesets. This means when selecting a valueset to use only the `SnomedCT Refset` and `SnomedCT isa implicit valueset` selection options will find a valueset.
      * `https://fhir.loinc.org` is a test server hosted by LOINC (see https://loinc.org/fhir/). This server uses basic authentication and only contains LOINC, not SNOMED CT or other valuesets.
-  * `FHIR request timeout (seconds)` - the maximum time to wait to *connect* to the FHIR server before giving up. Defaults to 10 seconds if left blank. It protects against an unreachable or refusing host; it does not currently bound a server that accepts the connection and then stalls (see "Security and performance fixes" below). Increase it if the terminology server is slow to accept connections; decrease it to fail faster.
+  * `FHIR request timeout (seconds)` - the maximum time to wait both to *connect* to the FHIR server and to complete the entire request before giving up. Defaults to 10 seconds if left blank. Protects against both an unreachable/refusing host and one that accepts the connection and then stalls (see "Security and performance fixes" below). Increase it if the terminology server is slow; decrease it to fail faster.
   * `SNOMEDCT Support` - when this checkbox is checked the search by 'SNOMED CT Refset' and 'SNOMED CT isa implicit valueset' will be made available.
   * `LOINC Support` - this dropdown controls the use of search by 'LOINC implicit answer set'. It options are
     *  `LOINC not available` - The search by 'LOINC implicit answer set' will not be available.

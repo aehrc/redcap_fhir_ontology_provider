@@ -1,8 +1,8 @@
 <?php
 
 // Separate from tests/bootstrap.php deliberately: PHPUnit's <bootstrap> is one
-// script for the whole run, and unit vs system tests need different http_get()/
-// http_post() (faked vs real) - hence also the separate phpunit.system.xml.
+// script for the whole run, and unit vs system tests need different curl_*()/
+// sameHostUrl() (faked vs real) - hence also the separate phpunit.system.xml.
 
 $_SESSION = $_SESSION ?? [];
 
