@@ -1,5 +1,12 @@
 # FHIR Ontology External Module
 
+This module lets a REDCap project use an external FHIR terminology server (for example an Ontoserver instance, or
+any other server hosting SNOMED CT, LOINC, or another code system) as the source of values for a text field's
+autocomplete, instead of free text or a hand-maintained fixed list. A project designer picks a FHIR ValueSet for a
+field in the Online Designer - by searching for one, or entering its URL directly - and from then on, typing into
+that field during data entry or a survey searches the configured server's `ValueSet/$expand` operation and offers
+matching codes, the same way REDCap's built-in BioPortal integration does for its own ontologies.
+
 The sections below give the full story behind each version's changes - why, not just what. For a terser,
 automatically generated commit-by-commit record, see [CHANGELOG.md](./CHANGELOG.md).
 
@@ -12,10 +19,6 @@ As part of release 8.8.1 of REDCap an extension point was added to allow externa
 *'Ontology Provider'*. These act like the existing BioPortal ontology mechanism, but allow alternative sources.
 The main function of an ontology provider is to take a search term and return some match of code + display.
 You can see more information on implementing an Ontology Provider at the [Simple Ontology Provider](https://github.com/aehrc/redcap_simple_ontology_provider) external module home.
-
-This module allows a FHIR based terminology server to be an alternative ontology provider.
-
-This is done using the ValueSet/$expand operation
 
 In version 0.3 of this module the online designer part of this module was changed to no longer talk directly from the
 web browser to the fhir server, instead a web service is included in the module to allow for the requests to be made via
