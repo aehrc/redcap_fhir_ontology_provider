@@ -1,16 +1,24 @@
 # FHIR Ontology External Module
 
+This module lets a REDCap project use an external FHIR terminology server (for example an Ontoserver instance, or
+any other server hosting SNOMED CT, LOINC, or another code system) as the source of values for a text field's
+autocomplete, instead of free text or a hand-maintained fixed list. A project designer picks a FHIR ValueSet for a
+field in the Online Designer - by searching for one, or entering its URL directly - and from then on, typing into
+that field during data entry or a survey searches the configured server's `ValueSet/$expand` operation and offers
+matching codes, the same way REDCap's built-in BioPortal integration does for its own ontologies.
+
 The sections below give the full story behind each version's changes - why, not just what. For a terser,
 automatically generated commit-by-commit record, see [CHANGELOG.md](./CHANGELOG.md).
+
+## Requirements
+
+- PHP 8.0.0 or later
+- REDCap 8.8.1 or later, on External Module framework version 16 or later
 
 As part of release 8.8.1 of REDCap an extension point was added to allow external modules to become an 
 *'Ontology Provider'*. These act like the existing BioPortal ontology mechanism, but allow alternative sources.
 The main function of an ontology provider is to take a search term and return some match of code + display.
 You can see more information on implementing an Ontology Provider at the [Simple Ontology Provider](https://github.com/aehrc/redcap_simple_ontology_provider) external module home.
-
-This module allows a FHIR based terminology server to be an alternative ontology provider.
-
-This is done using the ValueSet/$expand operation
 
 In version 0.3 of this module the online designer part of this module was changed to no longer talk directly from the
 web browser to the fhir server, instead a web service is included in the module to allow for the requests to be made via
@@ -19,7 +27,7 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
-### @HIDECHOICE never actually worked from a real data-entry request, and @FHIR-ONTOLOGY-HIDECHOICE added
+### @HIDECHOICE fix and @FHIR-ONTOLOGY-HIDECHOICE
 
 - ***Fixed: @HIDECHOICE was silently ignored on every real autocomplete search***
 `getHideChoice()`'s in-memory fast path read the field's annotation from `$Proj->metadata[$field]['field_annotation']`,
@@ -165,7 +173,8 @@ of LOINC in different servers.
 
 
 ## Using the module
-The module code needs to be placed in a directory `modules/fhir-ontology-provider_v0.5`
+The module code needs to be placed in a directory named `modules/fhir-ontology-provider_v<version>`, matching
+the version number of the release you downloaded (e.g. `modules/fhir-ontology-provider_v1.0.0`).
 
 The module should then show up as an external module.
 
