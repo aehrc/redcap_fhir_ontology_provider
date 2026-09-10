@@ -27,7 +27,7 @@ behind a proxy server.
 
 In version 0.4 of this module, limited support for @HIDECHOICE was added.
 
-### @HIDECHOICE never actually worked from a real data-entry request, and @FHIR-ONTOLOGY-HIDECHOICE added
+### @HIDECHOICE fix and @FHIR-ONTOLOGY-HIDECHOICE
 
 - ***Fixed: @HIDECHOICE was silently ignored on every real autocomplete search***
 `getHideChoice()`'s in-memory fast path read the field's annotation from `$Proj->metadata[$field]['field_annotation']`,
