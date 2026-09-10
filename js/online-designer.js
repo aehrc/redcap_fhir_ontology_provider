@@ -113,6 +113,86 @@ function clearValuesetDetailFields() {
   $('#fhirValueSet_status').text('');
   $('#fhirValueSet_expansion_count').text('');
   $('#fhirValueSet_contains').empty();
+  clearOntologyOptionsRecommendation();
+}
+
+/** URL shapes findValueSet() itself produces that are always exactly one code
+ * system, regardless of how many entries the ValueSet expands to - a SNOMED
+ * CT implicit valueset (refset or isa) is always SNOMED CT; a LOINC implicit
+ * answer list is always LOINC. */
+var SINGLE_SYSTEM_URL_PATTERNS = [
+  /^http:\/\/snomed\.info\/sct\?fhir_vs=/,
+  /^http:\/\/loinc\.org\/vs\//
+];
+
+/**
+ * Recommends an @FHIR-ONTOLOGY-OPTIONS tag for this ValueSet from data the dialog
+ * already has (no extra request), or null if neither option clearly applies.
+ * Two independent signals, each contributing its own option to the tag:
+ *
+ *  - return-all: recommended when expansion.total is known and small enough
+ *    (<= 20, matching this module's own default result_limit) that an
+ *    unfiltered fetch can genuinely return every entry in one go.
+ *  - code-template=${CODE}: recommended only when every entry is CONFIRMED to
+ *    share one code system - either the URL matches a known single-system
+ *    shape above (true regardless of size), or every entry get-valueset-info
+ *    actually returned shares one system AND expansion.total says that's
+ *    every entry there is (get-valueset-info caps at 10, so for a larger
+ *    ValueSet whose URL doesn't match a known shape, this can only ever see a
+ *    partial sample - no recommendation is made rather than guessing from it).
+ */
+function computeOntologyOptionsRecommendation(valueSetUrl, data) {
+  var messages = [];
+  var tagOptions = [];
+
+  var total = data.expansion ? data.expansion.total : undefined;
+  if (typeof total === 'number' && total <= 20) {
+    messages.push('This ValueSet only has ' + total + ' ' + (total === 1 ? 'entry' : 'entries') + ' - we advise using the "return-all" option to make it easier to browse and select without needing to match the exact wording.');
+    tagOptions.push('return-all');
+  }
+
+  var contains = (data.expansion && data.expansion.contains) || [];
+  var confirmedSingleSystem = SINGLE_SYSTEM_URL_PATTERNS.some(function (pattern) {
+    return pattern.test(valueSetUrl);
+  });
+  if (!confirmedSingleSystem && contains.length > 0 && typeof total === 'number' && total <= contains.length) {
+    confirmedSingleSystem = contains.every(function (entry) {
+      return entry.system === contains[0].system;
+    });
+  }
+  if (confirmedSingleSystem) {
+    messages.push('All entries in this ValueSet use the same code system - we advise using the "code-template=${CODE}" option to store just the code, rather than code and system.');
+    tagOptions.push('code-template=${CODE}');
+  }
+
+  if (!tagOptions.length) {
+    return null;
+  }
+  return {messages: messages, tag: "@FHIR-ONTOLOGY-OPTIONS='" + tagOptions.join(';') + "'"};
+}
+
+function clearOntologyOptionsRecommendation() {
+  $('#fhir_ontology_recommendation').hide();
+  $('#fhir_ontology_recommendation_text').empty();
+  $('#fhir_ontology_recommendation_tag').text('');
+  $('#fhir_ontology_recommendation_copy_feedback').text('');
+}
+
+function renderOntologyOptionsRecommendation(valueSetUrl, data) {
+  var recommendation = computeOntologyOptionsRecommendation(valueSetUrl, data);
+  if (!recommendation) {
+    clearOntologyOptionsRecommendation();
+    return;
+  }
+  var $text = $('#fhir_ontology_recommendation_text').empty();
+  for (var message of recommendation.messages) {
+    // build via DOM - nothing here is server-supplied, but stay consistent
+    // with this file's own convention of never building markup from strings
+    $text.append($('<div>').text(message));
+  }
+  $('#fhir_ontology_recommendation_tag').text(recommendation.tag);
+  $('#fhir_ontology_recommendation_copy_feedback').text('');
+  $('#fhir_ontology_recommendation').show();
 }
 
 function renderValuesetError(message) {
@@ -194,6 +274,7 @@ function showValuesetDetails(valueSetUrl) {
     }
     if (data.url) $('#fhirValueSet_url').text(data.url);
     renderValuesetDetails(data);
+    renderOntologyOptionsRecommendation(data.url || valueSetUrl, data);
     valuesetNameCache[valueSetUrl] = data.name || null;
   }).catch(function (error) {
     if (pendingPreviewUrl === valueSetUrl) {
@@ -306,6 +387,20 @@ $(function () {
   $('#fhir_valueset_change').on('click', openChangeDialog);
   $('#fhir_valueset_apply').on('click', applyValuesetSelection);
   $('#fhir_valueset_cancel').on('click', cancelValuesetDialog);
+
+  $('#fhir_ontology_recommendation_copy').on('click', function () {
+    var tag = $('#fhir_ontology_recommendation_tag').text();
+    var $feedback = $('#fhir_ontology_recommendation_copy_feedback');
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      $feedback.text('Copy not supported - select and copy the text manually.');
+      return;
+    }
+    navigator.clipboard.writeText(tag).then(function () {
+      $feedback.text('Copied!');
+    }).catch(function () {
+      $feedback.text('Could not copy - select and copy the text manually.');
+    });
+  });
 
   $('#fhir_valueset_search_type').on('change', function () {
     $('#fhir_valueset_search').val('');

@@ -266,14 +266,36 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         // Set 20 as default limit
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
+        // Fetched once and passed to both getSearchOptions() and getHideChoice()
+        // below, rather than each independently calling getFieldAnnotation() -
+        // in the (uncommon) slow path where $Proj doesn't match the requested
+        // project, getFieldAnnotation() does a full getDataDictionary() reload,
+        // and this field is searched on every autocomplete keystroke.
+        $annotations = $this->getFieldAnnotation();
+        $searchOptions = $this->getSearchOptions($annotations);
+        $priorityCodes = $searchOptions['priority-codes'];
+
+        $fetchLimit = $result_limit;
+        if (!empty($priorityCodes)) {
+            // Extra headroom so every listed priority code has a chance to appear
+            // in the response before final truncation - mirrors
+            // advanced_fhir_ontology_provider's priority-max-fetch, but sized
+            // automatically from the priority list's own length rather than as
+            // a second, separately-tunable option.
+            $fetchLimit += count($priorityCodes);
+        }
+
         // Build URL to call
         //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
         // need to escape the $expand in the url!
-        $url = $fhir_server_uri . "/ValueSet/\$expand?" . http_build_query(array(
-                'url' => $valueset_id,
-                'filter' => $search_term,
-                'count' => $result_limit
-            ));
+        $expandParams = array(
+            'url' => $valueset_id,
+            'count' => $fetchLimit
+        );
+        if (!$searchOptions['return-all']) {
+            $expandParams['filter'] = $search_term;
+        }
+        $url = $fhir_server_uri . "/ValueSet/\$expand?" . http_build_query($expandParams);
         // Call the URL
 
         $fhirFailed = false;
@@ -301,11 +323,11 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         }
         // Parse the JSON into an array
         $list = is_string($json) ? json_decode($json, true) : null;
-        $results = array();
+        $entries = array();
         if (is_array($list) && isset($list['expansion']['contains'])) {
             $expansion = $list['expansion'];
             // Loop through results
-            $hideChoice = $this->getHideChoice();
+            $hideChoice = $this->getHideChoice($annotations);
             foreach ($expansion['contains'] as $this_item) {
 
                 // code and system are not guaranteed present by FHIR
@@ -319,13 +341,23 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                     // in hide choice list
                     continue;
                 }
-                // Determine the value
-                // need to add the system as codes are not unique in SCT
-                $this_value = $code . "|" . $system;
-
-                // Add to array
-                $results[$this_value] = isset($this_item['display']) ? $this_item['display'] : $code;
+                $display = isset($this_item['display']) ? $this_item['display'] : $code;
+                $entries[] = array('code' => $code, 'system' => $system, 'display' => $display);
             }
+        }
+
+        if (!empty($entries) && ($searchOptions['return-all'] || !empty($priorityCodes))) {
+            $entries = $this->rankSearchEntries($entries, $search_term, $searchOptions);
+        }
+
+        // need to add the system as codes are not unique in SCT - ${CODE}|${SYSTEM}
+        // is the default when no @FHIR-ONTOLOGY-OPTIONS code-template is set, exactly
+        // matching this method's previous unconditional $code . "|" . $system.
+        $codeTemplate = $searchOptions['code-template'] !== null ? $searchOptions['code-template'] : '${CODE}|${SYSTEM}';
+        $results = array();
+        foreach ($entries as $entry) {
+            $this_value = str_replace(['${CODE}', '${SYSTEM}'], [$entry['code'], $entry['system']], $codeTemplate);
+            $results[$this_value] = $entry['display'];
         }
 
         if (!$results && !$fhirFailed) {
@@ -341,43 +373,51 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
         return array_slice($results, 0, $result_limit, true);
     }
 
-    function getHideChoice()
+    /**
+     * Reorders $entries (each ['code'=>..., 'system'=>..., 'display'=>...])
+     * per the field's @FHIR-ONTOLOGY-OPTIONS: priority-codes sorts first (in the
+     * order listed, code only - not system, matching
+     * advanced_fhir_ontology_provider's exact precedent), then, among the
+     * rest, return-all's match-ranking (code/display case-insensitively
+     * containing $search_term sorts before non-matches). Both keys use a
+     * stable sort (array_multisort, guaranteed stable since PHP 8.0), so ties
+     * keep their original relative (server-returned) order.
+     *
+     * Match-ranking is skipped when $search_term is empty (nothing to rank
+     * by) - this only affects the match key, not priority ranking, so
+     * priority-codes still works even if this method is ever called with an
+     * empty term.
+     */
+    private function rankSearchEntries($entries, $search_term, $searchOptions)
     {
-        $codesToHide = [];
-        $annotations = $this->getFieldAnnotation();
-        if ($annotations) {
-            // @HIDECHOICE is REDCap core's own built-in action tag (for hiding
-            // options on real choice fields); this module repurposes the same
-            // name for a text-type FHIR autocomplete field, which core's own
-            // implementation never touches. Because it reuses a core tag name,
-            // it can never be registered in the "@ Action Tags" popup (see
-            // Design/action_tag_explain.php - a module tag colliding with a
-            // built-in one is silently dropped, not shown). @FHIR-ONTOLOGY-HIDECHOICE
-            // is a second, equivalent, non-colliding tag name that can be
-            // registered there; both are recognized and merged so existing
-            // fields using @HIDECHOICE keep working unchanged.
-            foreach (['@HIDECHOICE', '@FHIR-ONTOLOGY-HIDECHOICE'] as $tagName) {
-                $offset = 0;
-                while (preg_match("/" . preg_quote($tagName, '/') . "='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
-                    $listedCodesStr = $matches[1][0];
-                    $listedCodes = explode(',', $listedCodesStr);
-                    foreach ($listedCodes as $code) {
-                        array_push($codesToHide, trim($code));
-                    }
-                    $offset = $matches[0][1] + strlen($matches[0][0]);
-                }
+        $priorityCodes = $searchOptions['priority-codes'];
+        $priorityCount = count($priorityCodes);
+        $applyMatchRanking = $searchOptions['return-all'] && '' !== trim((string)$search_term);
+
+        $priorityKeys = array();
+        $matchKeys = array();
+        foreach ($entries as $entry) {
+            $priorityRank = array_search($entry['code'], $priorityCodes, true);
+            $priorityKeys[] = ($priorityRank === false) ? $priorityCount : $priorityRank;
+
+            if ($applyMatchRanking) {
+                $isMatch = (false !== stripos($entry['code'], $search_term))
+                    || (false !== stripos($entry['display'], $search_term));
+                $matchKeys[] = $isMatch ? 0 : 1;
+            } else {
+                $matchKeys[] = 0;
             }
         }
 
-        return $codesToHide;
+        array_multisort($priorityKeys, SORT_ASC, $matchKeys, SORT_ASC, $entries);
+        return $entries;
     }
 
     /**
      * Returns the field currently being searched's raw field_annotation string,
      * or null if there isn't one (or no field is being searched at all). Shared
-     * by getHideChoice() and (in the sibling @ONTOLOGY-OPTIONS work) getSearchOptions() -
-     * both need "what does this field's annotation say" without paying for a
-     * full data dictionary reload on every autocomplete keystroke.
+     * by getHideChoice() and getSearchOptions() - both need "what does this
+     * field's annotation say", just looking for different tags within it.
      */
     private function getFieldAnnotation()
     {
@@ -410,6 +450,111 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                 : null;
         }
         return null;
+    }
+
+    /**
+     * @param string|null|false $annotations Pass the field's already-fetched
+     *   annotation (getFieldAnnotation()'s return value, including null for
+     *   "no annotation") to skip re-fetching it - used by searchOntology(),
+     *   which also needs it for getSearchOptions(). Omit (or pass false,
+     *   which getFieldAnnotation() itself never returns) to have this method
+     *   fetch it itself, as every direct caller other than searchOntology() does.
+     */
+    function getHideChoice($annotations = false)
+    {
+        $codesToHide = [];
+        if ($annotations === false) {
+            $annotations = $this->getFieldAnnotation();
+        }
+        if ($annotations) {
+            // @HIDECHOICE is REDCap core's own built-in action tag (for hiding
+            // options on real choice fields); this module repurposes the same
+            // name for a text-type FHIR autocomplete field, which core's own
+            // implementation never touches. Because it reuses a core tag name,
+            // it can never be registered in the "@ Action Tags" popup (see
+            // Design/action_tag_explain.php - a module tag colliding with a
+            // built-in one is silently dropped, not shown). @FHIR-ONTOLOGY-HIDECHOICE
+            // is a second, equivalent, non-colliding tag name that can be
+            // registered there; both are recognized and merged so existing
+            // fields using @HIDECHOICE keep working unchanged.
+            foreach (['@HIDECHOICE', '@FHIR-ONTOLOGY-HIDECHOICE'] as $tagName) {
+                $offset = 0;
+                while (preg_match("/" . preg_quote($tagName, '/') . "='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
+                    $listedCodesStr = $matches[1][0];
+                    $listedCodes = explode(',', $listedCodesStr);
+                    foreach ($listedCodes as $code) {
+                        array_push($codesToHide, trim($code));
+                    }
+                    $offset = $matches[0][1] + strlen($matches[0][0]);
+                }
+            }
+        }
+
+        return $codesToHide;
+    }
+
+    /**
+     * Parses @FHIR-ONTOLOGY-OPTIONS='...' from the current field's annotation into
+     * ['return-all' => bool, 'code-template' => string|null, 'priority-codes' => string[]].
+     *
+     * Options are semicolon-separated, not comma-separated like @HIDECHOICE -
+     * priority-codes needs its own comma-separated list of codes, and a plain
+     * comma-separated option list would make "priority-codes=123,456" and
+     * "return-all,priority-codes=123,456" ambiguous to split. Unrecognized
+     * tokens (and unrecognized keys) are ignored, so a malformed tag degrades
+     * to "no options applied" rather than an error, and a future option name
+     * added here is forward-compatible with older deployments that don't
+     * understand it yet.
+     *
+     * @param string|null|false $annotations Same optional pre-fetched-annotation
+     *   parameter as getHideChoice() - see its docblock.
+     */
+    function getSearchOptions($annotations = false)
+    {
+        $options = ['return-all' => false, 'code-template' => null, 'priority-codes' => []];
+        if ($annotations === false) {
+            $annotations = $this->getFieldAnnotation();
+        }
+        if (!$annotations) {
+            return $options;
+        }
+        $offset = 0;
+        while (preg_match("/@FHIR-ONTOLOGY-OPTIONS='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            $this->applySearchOptionTokens($matches[1][0], $options);
+            $offset = $matches[0][1] + strlen($matches[0][0]);
+        }
+        return $options;
+    }
+
+    private function applySearchOptionTokens($tokenString, array &$options)
+    {
+        foreach (explode(';', $tokenString) as $token) {
+            $token = trim($token);
+            if ($token === '') {
+                continue;
+            }
+            if ($token === 'return-all') {
+                $options['return-all'] = true;
+                continue;
+            }
+            $eqPos = strpos($token, '=');
+            if ($eqPos === false) {
+                continue; // unrecognized bare token - ignored
+            }
+            $key = trim(substr($token, 0, $eqPos));
+            $value = substr($token, $eqPos + 1);
+            if ($key === 'code-template') {
+                $options['code-template'] = $value;
+            } else if ($key === 'priority-codes') {
+                foreach (explode(',', $value) as $code) {
+                    $trimmed = trim($code);
+                    if ($trimmed !== '') {
+                        $options['priority-codes'][] = $trimmed;
+                    }
+                }
+            }
+            // unrecognized key - ignored
+        }
     }
 
 
@@ -511,6 +656,12 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
 	    <label for="fhirValueSet_expansion_count">Expansion Count:</label>
 	    <span id="fhirValueSet_expansion_count"></span>
 	   </div>
+      <div id="fhir_ontology_recommendation" style="display:none;margin:10px 0;padding:8px;background:#f5f5f5;border-radius:4px;">
+        <div id="fhir_ontology_recommendation_text" style="margin-bottom:6px;"></div>
+        <code id="fhir_ontology_recommendation_tag" style="background:#fff;padding:2px 6px;border-radius:3px;"></code>
+        <button type="button" id="fhir_ontology_recommendation_copy" class="ui-button ui-widget ui-corner-all">Copy</button>
+        <span id="fhir_ontology_recommendation_copy_feedback" style="color:#888;margin-left:4px;"></span>
+      </div>
       <div style="max-height:220px;overflow-y:auto;">
         <table class="table table-stripped">
 			<thead>

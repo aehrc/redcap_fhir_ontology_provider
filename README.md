@@ -55,6 +55,19 @@ dialog) discards whatever was being reviewed and leaves the previously saved sel
 The value saved against a field (`FHIR:<valueset-url>`) is exactly the same as before this change; only the Online
 Designer's own UI for choosing it is different. Fields configured under the old widget need no migration.
 
+### @FHIR-ONTOLOGY-OPTIONS action tag
+
+- ***Field-level control over search-all, stored value format, and priority codes***
+A new `@FHIR-ONTOLOGY-OPTIONS` action tag lets a project designer opt an individual field into `return-all` (browse a
+small answer-list ValueSet without needing to guess its exact wording), `code-template` (override the stored
+value's format), and `priority-codes` (push specific codes to the top of results) - see
+[@FHIR-ONTOLOGY-OPTIONS support](#fhir-ontology-options-support) below for the full syntax and worked examples.
+- ***The Online Designer's "Select FHIR ValueSet" dialog now suggests it automatically***
+When a previewed ValueSet is small (20 entries or fewer) and/or confirmed to use only one code system - either a
+known single-system shape (a SNOMED CT implicit valueset, or a LOINC implicit answer list) or every entry actually
+returned - the dialog shows a suggested `@FHIR-ONTOLOGY-OPTIONS` tag with a "Copy" button, ready to paste into the
+field's own Action Tags / Field Annotation box.
+
 ### Online Designer ontology picker now uses REDCap's module.ajax()
 
 - ***`FindValueSetService` page removed***
@@ -132,7 +145,7 @@ are now handled explicitly instead of producing PHP warnings.
 
 - ***Change storage format***
 In version 0.5 of this module the way the selected code is stored has been changed. In earlier version the code used the
-format '${code}|${display}|${system}' as returned by the fhir server. If the display was large, this could result in
+format `${code}|${display}|${system}` as returned by the fhir server. If the display was large, this could result in
 a code which was more than 100 characters which would make the display lookup fail. Instead just '${code}|${system}'
 will be stored.
 - ***Basic Authentication support***
@@ -185,26 +198,29 @@ The following site wide settings are available:
 
 ### Online designer
 
-Once enabled the online designer will have a new ontology source available. If selected the following UI elements will be made available:
+Once enabled the online designer will have a new ontology source available. Selecting `FHIR` as the field's ontology
+source replaces the field's search-type/autocomplete/details controls with a compact "Selected ValueSet:" summary and
+a single "Change..." button (see [Online Designer ontology picker redesigned as a single popup dialog](#online-designer-ontology-picker-redesigned-as-a-single-popup-dialog)
+above). Clicking "Change..." opens one dialog containing:
 
--Search For valuset using: (dropdown with the options)
- - ValueSet Name - searching using the name of the valueset
- - By CodeSystem - searching using the title of the codesystem
- - SNOMED CT Refset - search for a SNOMED CT Refset
- - SNOMED CT isa implicit valueset - search for a SNOMED CT concept and use the valueset composed of it and its children
- - LOINC implicit answer set - search for a LOINC implicit answer set
-    
--text input with autocomplete based on the search mode
+- **Search for ValueSet using:** a dropdown choosing how the search box below it matches, with the options:
+  - ValueSet Name - searching using the name of the valueset
+  - By CodeSystem - searching using the title of the codesystem
+  - SNOMED CT Refset - search for a SNOMED CT Refset
+  - SNOMED CT isa implicit valueset - search for a SNOMED CT concept and use the valueset composed of it and its children
+  - LOINC implicit answer set - search for a LOINC implicit answer set
+- an autocomplete search box driven by the search-type above, for finding a ValueSet without already knowing its URL
+- **Or enter a ValueSet URL directly:** a text input holding the URI of the ValueSet under review - filled in
+  automatically by picking an autocomplete result, or editable directly if the URL is already known
+- a details panel showing the reviewed ValueSet's URL/name/version/status/expansion count, a suggested
+  `@FHIR-ONTOLOGY-OPTIONS` tag when the ValueSet looks like a good fit for `return-all` (see
+  [@FHIR-ONTOLOGY-OPTIONS support](#fhir-ontology-options-support) below), and a table of its first entries
+  (Display/Code/System)
+- **"Use this ValueSet"**/**"Cancel"** buttons - picking a search result or typing a URL only loads that ValueSet's
+  details for review; the field's saved selection only changes once "Use this ValueSet" is clicked, and "Cancel" (or
+  closing the dialog) discards the review and leaves the previously saved selection untouched
 
--select button - Select the valueset found using the search, making it the selected valuset
-
--text input which is filled out by the search button, contains the uri for the selected valueset
-
--Show details button - Retrieve the first 10 entries of the selected valueset, and display along with other information about the valueset in a dialog.
-
-![Online Designer](documentation/online_designer.png)
-
-![Show Details](documentation/ShowDetails.png)
+![Select FHIR ValueSet dialog](documentation/SelectFhirValueSet.png)
 
 
 ### @HIDECHOICE support
@@ -232,15 +248,65 @@ lists are merged):
 ```
 
 **Piping is not supported, and not currently possible, in `@HIDECHOICE`'s or `@FHIR-ONTOLOGY-HIDECHOICE`'s
-argument** (e.g. `@HIDECHOICE='[other_field]'` to hide a code chosen by another field's answer). REDCap core's own
-built-in `@HIDECHOICE` resolves piping in its argument via `Piping::replaceVariablesInLabel($text, $record,
+argument** (e.g. `@HIDECHOICE='[other_field]'` to hide a code chosen by another field's answer) - see the note at
+the end of [@FHIR-ONTOLOGY-OPTIONS support](#fhir-ontology-options-support) below, which explains why and applies
+equally here.
+
+
+### @FHIR-ONTOLOGY-OPTIONS support
+`@FHIR-ONTOLOGY-OPTIONS` is a field-level action tag (same convention as `@HIDECHOICE` above) that controls how the
+Online Designer's data-entry autocomplete search behaves for that specific field. It takes a **semicolon**-separated
+list of options - not comma-separated like `@HIDECHOICE` - because one of the options (`priority-codes`) needs its
+own comma-separated list of codes, and a plain comma-separated option list would make that ambiguous to split.
+Options are combined in one tag:
+```text
+@FHIR-ONTOLOGY-OPTIONS='return-all;code-template=${CODE};priority-codes=code1,code2'
+```
+Unrecognized options (or the whole tag being malformed) are silently ignored, rather than causing an error - a
+mistyped option just means that option doesn't apply, not a broken field.
+
+  * ***return-all*** - Without this option, every autocomplete search sends the typed text to the FHIR server as a
+    filter, so nothing appears unless the typed text happens to textually match the server's `display` wording for
+    an entry. For a small, fully-enumerated answer-list ValueSet (a handful of values, e.g. a frequency-of-use
+    scale), this makes it hard to actually browse the options. With `return-all` set, the field's search instead
+    drops the server-side text filter and ranks entries locally - anything whose code or display matches the typed
+    text sorts first, everything else follows. **This option is intended for small ValueSets only, and does not
+    actually fetch every entry in the ValueSet: the server is still asked for at most the field's result limit
+    (20 by default), just without a filter.** An entry beyond that limit in the server's own ordering is never
+    fetched at all, so it can never appear locally-ranked as a match either, no matter how well its code or display
+    matches the typed text - the omission is silent, with no indication to the user that anything is missing.
+    Setting this on a ValueSet larger than the result limit therefore risks making some otherwise-valid entries
+    permanently unreachable by search; setting it on a large ValueSet (SNOMED CT, etc.) is also simply slow and
+    wasteful, since the full unfiltered request is repeated on every search keystroke.
+  * ***code-template*** - Overrides the format of the value stored in REDCap for this field, the same way
+    `advanced_fhir_ontology_provider`'s per-category `Code Template` setting does. Without this option, the stored
+    value is `${CODE}|${SYSTEM}` (unchanged from previous versions of this module). The template replaces
+    `${CODE}` and `${SYSTEM}` with the values returned from the FHIR terminology server; `${DISPLAY}` is not
+    supported here (unlike `advanced_fhir_ontology_provider`, this module doesn't template the displayed label,
+    only the stored value). Some FHIR ValueSets are composed of values from multiple code systems, making the code
+    + system required for a unique coding - **if the ValueSet used on this field only contains values from a
+    single code system, `code-template=${CODE}` can be used to store just the bare code.** Using a code-only
+    template on a ValueSet that does span multiple code systems risks two different real answers colliding under
+    the same stored value (whichever one is returned last in a given search silently overwrites the other in that
+    search's results), and also means REDCap's own web-service label cache (keyed by the stored value) can show
+    the wrong cached label for a later record that picked the other system's entry with the same code. This is the
+    same trade-off `advanced_fhir_ontology_provider`'s admins already accept for its `Code Template` setting - only
+    use `code-template=${CODE}` when you know the field's ValueSet doesn't have colliding codes across systems.
+  * ***priority-codes*** - A comma-separated list of codes that should sort to the top of a field's search results
+    whenever they appear among them, in the order listed (matching only the FHIR code, not the system - same as
+    `@HIDECHOICE` above). A code listed in both `@HIDECHOICE` and `priority-codes` is excluded entirely; hiding a
+    choice always takes priority over prioritizing it.
+
+**Piping is not supported, and not currently possible, in any of `@FHIR-ONTOLOGY-OPTIONS`'s options** (e.g.
+`priority-codes=[other_field]`) **or in `@HIDECHOICE`'s or `@FHIR-ONTOLOGY-HIDECHOICE`'s argument.** REDCap core's
+own built-in `@HIDECHOICE` resolves piping in its argument via `Piping::replaceVariablesInLabel($text, $record,
 $event_id, $instance, ...)`, which needs to know which record is currently being edited. This module's field-level
-tags are read from inside `DataEntry/web_service_auto_suggest.php` - the same real endpoint every search on this
+tags are all read from inside `DataEntry/web_service_auto_suggest.php` - the same real endpoint every search on the
 field hits - and that endpoint's request never carries a record, event, or instance identifier at all; REDCap
 core's own front-end JS only ever sends `term`, `field`, and `pid` to it. There is no record context available to
-pipe against from here, regardless of how this module parses the tag, so this isn't a missing feature so much as a
-limitation of the integration point itself - it would only become possible if a future REDCap version started
-including record context in that request.
+pipe against from here, regardless of how this module parses a tag's argument, so this isn't a missing feature so
+much as a limitation of the integration point itself - it would only become possible if a future REDCap version
+started including record context in that request.
 
 
 ### Label Cache Issue
