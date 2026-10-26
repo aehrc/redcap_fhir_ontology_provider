@@ -179,8 +179,8 @@ the version number of the release you downloaded (e.g. `modules/fhir-ontology-pr
 The module should then show up as an external module.
 
 The following site wide settings are available:
-  * `FHIR API URL` - this is the url for the fhir server. Two possible fhir end points are listed, but people may want to run their own server to have better control of the available ValueSets. 
-     The two suggested fhir end points are:
+  * `FHIR API URL` - this is the url for the fhir server. Three possible fhir end points are listed, but people may want to run their own server to have better control of the available ValueSets. 
+     The three suggested fhir end points are:
      * `https://tx.ontoserver.csiro.au/fhir` an Australian server with the Australian edition of SNOMED CT as its default. The server also contains LOINC and other code systems.
      * `https://snowstorm-fhir.snomedtools.org/fhir` is a test server hosted by snomed, it does not include LOINC or non-snomed code systems and valuesets. This means when selecting a valueset to use only the `SnomedCT Refset` and `SnomedCT isa implicit valueset` selection options will find a valueset.
      * `https://fhir.loinc.org` is a test server hosted by LOINC (see https://loinc.org/fhir/). This server uses basic authentication and only contains LOINC, not SNOMED CT or other valuesets.
@@ -388,7 +388,7 @@ A SNOMED CT implicit value set URL has two parts:
 
 "http://snomed.info/sct" should be understood to mean an unspecified edition/version. This defines an incomplete value set whose actual membership will depend on the particular edition used when it is expanded. If no version or edition is specified, the terminology service SHALL use the latest version available for its default edition (or the international edition, if no other edition is the default). 
 
-The default terminology service for this module, `https://ontoserver.csiro.au/stu3-latest` is an Australian server and has the Australian edition of SNOMEDCT as its default.
+Which edition that is depends on the terminology server configured in `FHIR API URL`. Ontoserver at `https://tx.ontoserver.csiro.au/fhir`, for example, is an Australian server and has the Australian edition of SNOMED CT as its default.
 
 To define an edition and version the url is `http://snomed.info/sct/<edition>/version/<version>`. To get the latest version of an edition then `http://snomed.info/sct/<edition>` is used.
 
@@ -402,7 +402,7 @@ For the second part of the URL (the query part), the 4 possible values are:
 - *fhir_vs=ecl/[ecl expression]* - Uses the ecl expression to restrict the set of values. ECL is a special language developed
   for SNOMED CT, more information can be found here: https://ontoserver.csiro.au/shrimp/ecl_help.html
 
-To explore SNOMED CT check out Shrimp http://ontoserver.csiro.au/shrimp
+To explore SNOMED CT check out Shrimp https://ontoserver.csiro.au/shrimp
 
 The following example of using explicit SNOMED CT valuesets is taken from the documentation of the Advanced FHIR 
 Ontology External Module:
