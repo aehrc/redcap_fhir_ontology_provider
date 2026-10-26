@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/aehrc/redcap_fhir_ontology_provider/compare/v1.0.0...v1.0.1) (2026-10-26)
+
+
+### Documentation
+
+* correct the README's terminology server notes ([#35](https://github.com/aehrc/redcap_fhir_ontology_provider/issues/35)) ([5ba2601](https://github.com/aehrc/redcap_fhir_ontology_provider/commit/5ba26011d9a59231286433c9940a3b16345b5b03))
+
 ## [1.0.0](https://github.com/aehrc/redcap_fhir_ontology_provider/compare/v0.5.1...v1.0.0) (2026-10-22)
 
 
