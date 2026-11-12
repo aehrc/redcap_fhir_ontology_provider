@@ -3,7 +3,7 @@
     "description": "REDCap external module providing FHIR-based ontology autocomplete",
     "type": "project",
     "require-dev": {
-        "vimeo/psalm": "^6.16",
+        "vimeo/psalm": "^7.1",
         "phpunit/phpunit": "^11.5"
     },
     "config": {
