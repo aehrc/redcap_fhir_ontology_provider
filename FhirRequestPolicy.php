@@ -84,6 +84,21 @@ class FhirRequestPolicy
     }
 
     /**
+     * The access token a token endpoint returned, if it can be sent in an Authorization header,
+     * else null: printable ASCII with no spaces or control characters, so above all no CR/LF to
+     * inject headers into every FHIR request. (Looser than RFC 6750's b64token on purpose: real
+     * servers issue tokens with ! # | and the like, which can't inject anything. \z, not $: $
+     * also matches before a trailing newline.)
+     *
+     * @param mixed $value
+     * @psalm-taint-escape header
+     */
+    public static function bearerToken($value): ?string
+    {
+        return (is_string($value) && preg_match('/^[\x21-\x7E]+\z/', $value) === 1) ? $value : null;
+    }
+
+    /**
      * True when $url addresses the same origin as $baseUri, sits at or below its
      * path, carries no embedded credentials other than a copy of the base's own,
      * and contains no dot-segment traversal. Every URL this module constructs
