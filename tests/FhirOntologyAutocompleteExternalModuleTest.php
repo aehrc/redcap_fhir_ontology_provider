@@ -119,6 +119,20 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertLessThan($after + 3600, $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES']);
     }
 
+    public function testATokenThatIsNotAValidBearerTokenIsRefusedAndNotCached(): void
+    {
+        // (it would go into an Authorization header on every FHIR request: a CR/LF could inject headers)
+        FakeHttpTransport::$response = json_encode(['access_token' => "tok\r\nX-Injected: 1", 'expires_in' => 3600]);
+        $this->module->systemSettings['authentication_type'] = 'cc';
+        $this->module->systemSettings['cc_token_endpoint'] = 'https://example.test/token';
+        $this->module->systemSettings['cc_client_id'] = 'id';
+        $this->module->systemSettings['cc_client_secret'] = 'secret';
+
+        $this->assertFalse($this->module->getAuthHeader());
+        $this->assertCount(1, FakeHttpTransport::$calls, 'the token endpoint was asked');
+        $this->assertArrayNotHasKey('FHIR_ONTOLOGY_TOKEN', $_SESSION);
+    }
+
     public function testCachedUnexpiredTokenIsReusedWithoutRefetching(): void
     {
         // getClientCredentialsToken()'s own httpPost() call has no way to pass a

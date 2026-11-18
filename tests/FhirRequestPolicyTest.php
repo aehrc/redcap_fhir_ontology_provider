@@ -346,4 +346,20 @@ final class FhirRequestPolicyTest extends TestCase
     {
         $this->assertTrue(FhirRequestPolicy::isWithinBase('http://ts.example.org/fhir', 'http://ts.example.org/fhir'));
     }
+
+    // --- bearerToken(): a token endpoint's access_token goes into an Authorization header ---
+
+    public function testBearerTokenAcceptsRfc6750Tokens(): void
+    {
+        foreach (['tok-1', 'abc.def.ghi', 'eyJhbGciOiJIUzI1NiJ9.e30.sig_-~+/', 'YWJj==', 'A'] as $token) {
+            $this->assertSame($token, FhirRequestPolicy::bearerToken($token), $token);
+        }
+    }
+
+    public function testBearerTokenRejectsAnythingThatCouldInjectAHeader(): void
+    {
+        foreach (["tok\r\nX-Injected: 1", "tok\n", "tok\r", 'tok with space', 'tok;x=1', '=tok', '', null, 42, ['tok']] as $value) {
+            $this->assertNull(FhirRequestPolicy::bearerToken($value), var_export($value, true));
+        }
+    }
 }

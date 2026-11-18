@@ -204,6 +204,8 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                         $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no parseable response\n";
                     } else if (!array_key_exists('access_token', $responseJson)) {
                         $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
+                    } else if (FhirRequestPolicy::bearerToken($responseJson['access_token']) === null) {
+                        $errors .= "The Authentication Token from '" . $authEndpoint . "' is not a valid bearer token, so it can't be used\n";
                     }
                 }
             } catch (\Exception $e) {
@@ -1367,9 +1369,13 @@ EOD;
             $responseJson = is_string($response) ? json_decode($response, true) : null;
             if (!is_array($responseJson)) {
                 error_log("Failed to negotiate auth token : no parseable response from " . $tokenEndpoint);
+            } elseif (array_key_exists('access_token', $responseJson)
+                && FhirRequestPolicy::bearerToken($responseJson['access_token']) === null) {
+                // (it would go into an Authorization header: never one that could inject headers)
+                error_log("Failed to negotiate auth token : the access_token from " . $tokenEndpoint . " is not a valid bearer token");
             } elseif (array_key_exists('access_token', $responseJson)) {
                 $clear = false;
-                $_SESSION['FHIR_ONTOLOGY_TOKEN'] = $responseJson['access_token'];
+                $_SESSION['FHIR_ONTOLOGY_TOKEN'] = FhirRequestPolicy::bearerToken($responseJson['access_token']);
                 // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
                 // * 1000 cached a 3600s token for roughly 41 days. Renew early by
                 // margin = min(60, floor(lifetime / 2)): a minute early for normal
