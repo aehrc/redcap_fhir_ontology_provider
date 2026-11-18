@@ -205,7 +205,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                     } else if (!array_key_exists('access_token', $responseJson)) {
                         $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
                     } else if (FhirRequestPolicy::bearerToken($responseJson['access_token']) === null) {
-                        $errors .= "The Authentication Token from '" . $authEndpoint . "' can't be sent in a header (it has spaces or control characters)\n";
+                        $errors .= "The Authentication Token from '" . $authEndpoint . "' can't be sent in a header (it must be printable ASCII text with no spaces)\n";
                     }
                 }
             } catch (\Exception $e) {
@@ -1094,7 +1094,8 @@ EOD;
             foreach ($headers as $hvalue) {
                 $headerText .= $hvalue . "\r\n";
             }
-            $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout);
+            // (no redirects: the Authorization header would follow them to wherever they point)
+            $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout, 'follow_location' => 0);
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
                 $http_array['proxy'] = str_replace(array('http://', 'https://'), array('tcp://', 'tcp://'), PROXY_HOSTNAME);
@@ -1223,7 +1224,9 @@ EOD;
             $http_array = array('method' => 'POST',
                 'header' => "Content-type: $contentType" . "\r\n" . $headerText . "Content-Length: " . strlen($param_string) . "\r\n",
                 'content' => $param_string,
-                'timeout' => $timeout
+                'timeout' => $timeout,
+                // (no redirects: the Authorization header would follow them to wherever they point)
+                'follow_location' => 0
             );
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
@@ -1394,9 +1397,9 @@ EOD;
                     $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + $lifetime - $margin;
                 }
             } elseif (array_key_exists('error', $responseJson)) {
-                error_log("Failed to negotiate auth token : " . json_encode($responseJson['error']) . " - " . json_encode($responseJson['error_description'] ?? ''));
+                error_log("Failed to negotiate auth token : " . json_encode($responseJson['error'], JSON_INVALID_UTF8_SUBSTITUTE) . " - " . json_encode($responseJson['error_description'] ?? '', JSON_INVALID_UTF8_SUBSTITUTE));
             } else {
-                error_log("Failed to negotiate auth token : " . $response);
+                error_log("Failed to negotiate auth token : " . json_encode($response, JSON_INVALID_UTF8_SUBSTITUTE));
             }
         } catch (\Exception $e) {
             $error_code = $e->getCode();
