@@ -84,17 +84,18 @@ class FhirRequestPolicy
     }
 
     /**
-     * The access token a token endpoint returned, if it is a valid RFC 6750 bearer token
-     * (b64token: letters, digits, - . _ ~ + /, then optional = padding), else null. It is sent in
-     * an Authorization header on every FHIR request, so anything else - a CR/LF above all - could
-     * inject headers into those requests. (\z, not $: $ also matches before a trailing newline.)
+     * The access token a token endpoint returned, if it can be sent in an Authorization header,
+     * else null: printable ASCII with no spaces or control characters, so above all no CR/LF to
+     * inject headers into every FHIR request. (Looser than RFC 6750's b64token on purpose: real
+     * servers issue tokens with ! # | and the like, which can't inject anything. \z, not $: $
+     * also matches before a trailing newline.)
      *
      * @param mixed $value
      * @psalm-taint-escape header
      */
     public static function bearerToken($value): ?string
     {
-        return (is_string($value) && preg_match('/^[A-Za-z0-9\-._~+\/]+=*\z/', $value) === 1) ? $value : null;
+        return (is_string($value) && preg_match('/^[\x21-\x7E]+\z/', $value) === 1) ? $value : null;
     }
 
     /**

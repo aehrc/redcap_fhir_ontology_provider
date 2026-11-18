@@ -205,7 +205,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                     } else if (!array_key_exists('access_token', $responseJson)) {
                         $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
                     } else if (FhirRequestPolicy::bearerToken($responseJson['access_token']) === null) {
-                        $errors .= "The Authentication Token from '" . $authEndpoint . "' is not a valid bearer token, so it can't be used\n";
+                        $errors .= "The Authentication Token from '" . $authEndpoint . "' can't be sent in a header (it has spaces or control characters)\n";
                     }
                 }
             } catch (\Exception $e) {
@@ -1348,9 +1348,11 @@ EOD;
         if (array_key_exists('FHIR_ONTOLOGY_TOKEN_EXPIRES', $_SESSION) &&
             array_key_exists('FHIR_ONTOLOGY_TOKEN', $_SESSION)) {
             $expire = $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'];
-            if ($now < $expire) {
-                // not expired.
-                return $_SESSION['FHIR_ONTOLOGY_TOKEN'];
+            $cached = FhirRequestPolicy::bearerToken($_SESSION['FHIR_ONTOLOGY_TOKEN']);
+            if ($now < $expire && $cached !== null) {
+                // not expired (and still a token that can go in a header: one cached before that
+                // check came in is fetched again)
+                return $cached;
             }
         }
 
@@ -1369,28 +1371,30 @@ EOD;
             $responseJson = is_string($response) ? json_decode($response, true) : null;
             if (!is_array($responseJson)) {
                 error_log("Failed to negotiate auth token : no parseable response from " . $tokenEndpoint);
-            } elseif (array_key_exists('access_token', $responseJson)
-                && FhirRequestPolicy::bearerToken($responseJson['access_token']) === null) {
-                // (it would go into an Authorization header: never one that could inject headers)
-                error_log("Failed to negotiate auth token : the access_token from " . $tokenEndpoint . " is not a valid bearer token");
             } elseif (array_key_exists('access_token', $responseJson)) {
-                $clear = false;
-                $_SESSION['FHIR_ONTOLOGY_TOKEN'] = FhirRequestPolicy::bearerToken($responseJson['access_token']);
-                // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
-                // * 1000 cached a 3600s token for roughly 41 days. Renew early by
-                // margin = min(60, floor(lifetime / 2)): a minute early for normal
-                // lifetimes, halfway through for very short ones, and never an expiry
-                // beyond the real one.
-                $lifetime = array_key_exists('expires_in', $responseJson)
-                    ? (int)$responseJson['expires_in']
-                    : 3600;
-                if ($lifetime < 1) {
-                    $lifetime = 1;
+                // (it goes into an Authorization header: never one that could inject headers)
+                $token = FhirRequestPolicy::bearerToken($responseJson['access_token']);
+                if ($token === null) {
+                    error_log("Failed to negotiate auth token : the access_token from " . $tokenEndpoint . " can't be sent in a header");
+                } else {
+                    $clear = false;
+                    $_SESSION['FHIR_ONTOLOGY_TOKEN'] = $token;
+                    // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
+                    // * 1000 cached a 3600s token for roughly 41 days. Renew early by
+                    // margin = min(60, floor(lifetime / 2)): a minute early for normal
+                    // lifetimes, halfway through for very short ones, and never an expiry
+                    // beyond the real one.
+                    $lifetime = array_key_exists('expires_in', $responseJson)
+                        ? (int)$responseJson['expires_in']
+                        : 3600;
+                    if ($lifetime < 1) {
+                        $lifetime = 1;
+                    }
+                    $margin = (int)min(60, floor($lifetime / 2));
+                    $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + $lifetime - $margin;
                 }
-                $margin = (int)min(60, floor($lifetime / 2));
-                $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = $now + $lifetime - $margin;
             } elseif (array_key_exists('error', $responseJson)) {
-                error_log("Failed to negotiate auth token : " . $responseJson['error'] . " - " . $responseJson['error_description']);
+                error_log("Failed to negotiate auth token : " . json_encode($responseJson['error']) . " - " . json_encode($responseJson['error_description'] ?? ''));
             } else {
                 error_log("Failed to negotiate auth token : " . $response);
             }

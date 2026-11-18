@@ -133,6 +133,37 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertArrayNotHasKey('FHIR_ONTOLOGY_TOKEN', $_SESSION);
     }
 
+    public function testACachedTokenThatCannotGoInAHeaderIsFetchedAgain(): void
+    {
+        // (e.g. cached before the check came in)
+        $_SESSION['FHIR_ONTOLOGY_TOKEN'] = "old\r\nX-Injected: 1";
+        $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = time() + 3600;
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-new', 'expires_in' => 3600]);
+        $this->module->systemSettings['authentication_type'] = 'cc';
+        $this->module->systemSettings['cc_token_endpoint'] = 'https://example.test/token';
+        $this->module->systemSettings['cc_client_id'] = 'id';
+        $this->module->systemSettings['cc_client_secret'] = 'secret';
+
+        $this->assertSame('Authorization: Bearer tok-new', $this->module->getAuthHeader());
+        $this->assertCount(1, FakeHttpTransport::$calls, 'a fresh token was fetched');
+    }
+
+    public function testTheSettingsCheckReportsATokenThatCannotGoInAHeader(): void
+    {
+        $settings = [
+            'fhir_api_url' => 'https://example.test/fhir', 'authentication_type' => 'cc',
+            'cc_token_endpoint' => 'https://example.test/token', 'cc_client_id' => 'id', 'cc_client_secret' => 'secret',
+            'basic_user_id' => '', 'basic_user_password' => '',
+            'return_no_result' => false, 'no_result_label' => '', 'no_result_code' => '',
+        ];
+        FakeHttpTransport::$response = json_encode(['access_token' => "tok\r\nX-Injected: 1"]);
+        $this->assertStringContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
+
+        FakeHttpTransport::reset();
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-1']);
+        $this->assertStringNotContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
+    }
+
     public function testCachedUnexpiredTokenIsReusedWithoutRefetching(): void
     {
         // getClientCredentialsToken()'s own httpPost() call has no way to pass a
