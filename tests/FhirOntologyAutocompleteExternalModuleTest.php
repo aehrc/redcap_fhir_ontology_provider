@@ -119,6 +119,66 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertLessThan($after + 3600, $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES']);
     }
 
+    public function testATokenThatIsNotAValidBearerTokenIsRefusedAndNotCached(): void
+    {
+        // (it would go into an Authorization header on every FHIR request: a CR/LF could inject headers)
+        FakeHttpTransport::$response = json_encode(['access_token' => "tok\r\nX-Injected: 1", 'expires_in' => 3600]);
+        $this->module->systemSettings['authentication_type'] = 'cc';
+        $this->module->systemSettings['cc_token_endpoint'] = 'https://example.test/token';
+        $this->module->systemSettings['cc_client_id'] = 'id';
+        $this->module->systemSettings['cc_client_secret'] = 'secret';
+
+        $this->assertFalse($this->module->getAuthHeader());
+        $this->assertCount(1, FakeHttpTransport::$calls, 'the token endpoint was asked');
+        $this->assertArrayNotHasKey('FHIR_ONTOLOGY_TOKEN', $_SESSION);
+    }
+
+    public function testACachedTokenThatCannotGoInAHeaderIsFetchedAgain(): void
+    {
+        // (e.g. cached before the check came in)
+        $_SESSION['FHIR_ONTOLOGY_TOKEN'] = "old\r\nX-Injected: 1";
+        $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'] = time() + 3600;
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-new', 'expires_in' => 3600]);
+        $this->module->systemSettings['authentication_type'] = 'cc';
+        $this->module->systemSettings['cc_token_endpoint'] = 'https://example.test/token';
+        $this->module->systemSettings['cc_client_id'] = 'id';
+        $this->module->systemSettings['cc_client_secret'] = 'secret';
+
+        $this->assertSame('Authorization: Bearer tok-new', $this->module->getAuthHeader());
+        $this->assertCount(1, FakeHttpTransport::$calls, 'a fresh token was fetched');
+    }
+
+    public function testTheSettingsCheckReportsATokenThatCannotGoInAHeader(): void
+    {
+        $settings = [
+            'fhir_api_url' => 'https://example.test/fhir', 'authentication_type' => 'cc',
+            'cc_token_endpoint' => 'https://example.test/token', 'cc_client_id' => 'id', 'cc_client_secret' => 'secret',
+            'basic_user_id' => '', 'basic_user_password' => '',
+            'return_no_result' => false, 'no_result_label' => '', 'no_result_code' => '',
+        ];
+        FakeHttpTransport::$response = json_encode(['access_token' => "tok\r\nX-Injected: 1"]);
+        $this->assertStringContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
+
+        FakeHttpTransport::reset();
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-1']);
+        $this->assertStringNotContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
+    }
+
+    public function testTheSettingsCheckShowsAResponseWithoutATokenEscapedAndBounded(): void
+    {
+        $settings = [
+            'fhir_api_url' => 'https://example.test/fhir', 'authentication_type' => 'cc',
+            'cc_token_endpoint' => 'https://example.test/token', 'cc_client_id' => 'id', 'cc_client_secret' => 'secret',
+            'basic_user_id' => '', 'basic_user_password' => '',
+            'return_no_result' => false, 'no_result_label' => '', 'no_result_code' => '',
+        ];
+        FakeHttpTransport::$response = json_encode(['note' => '<script>alert(1)</script>' . str_repeat('x', 2000)]);
+        $errors = (string) $this->module->validateSettings($settings);
+        $this->assertStringContainsString('no access_token in the response', $errors);
+        $this->assertStringNotContainsString('<script>', $errors);
+        $this->assertLessThan(1500, strlen($errors), 'the response is bounded');
+    }
+
     public function testCachedUnexpiredTokenIsReusedWithoutRefetching(): void
     {
         // getClientCredentialsToken()'s own httpPost() call has no way to pass a
