@@ -164,6 +164,21 @@ final class FhirOntologyAutocompleteExternalModuleTest extends TestCase
         $this->assertStringNotContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
     }
 
+    public function testTheSettingsCheckShowsAResponseWithoutATokenEscapedAndBounded(): void
+    {
+        $settings = [
+            'fhir_api_url' => 'https://example.test/fhir', 'authentication_type' => 'cc',
+            'cc_token_endpoint' => 'https://example.test/token', 'cc_client_id' => 'id', 'cc_client_secret' => 'secret',
+            'basic_user_id' => '', 'basic_user_password' => '',
+            'return_no_result' => false, 'no_result_label' => '', 'no_result_code' => '',
+        ];
+        FakeHttpTransport::$response = json_encode(['note' => '<script>alert(1)</script>' . str_repeat('x', 2000)]);
+        $errors = (string) $this->module->validateSettings($settings);
+        $this->assertStringContainsString('no access_token in the response', $errors);
+        $this->assertStringNotContainsString('<script>', $errors);
+        $this->assertLessThan(1500, strlen($errors), 'the response is bounded');
+    }
+
     public function testCachedUnexpiredTokenIsReusedWithoutRefetching(): void
     {
         // getClientCredentialsToken()'s own httpPost() call has no way to pass a

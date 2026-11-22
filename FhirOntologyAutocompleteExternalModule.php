@@ -203,7 +203,7 @@ class FhirOntologyAutocompleteExternalModule extends AbstractExternalModule impl
                     if (!is_array($responseJson)) {
                         $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no parseable response\n";
                     } else if (!array_key_exists('access_token', $responseJson)) {
-                        $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
+                        $errors .= "Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no access_token in the response: " . substr((string) json_encode($response, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT), 0, 500) . "\n";
                     } else if (FhirRequestPolicy::bearerToken($responseJson['access_token']) === null) {
                         $errors .= "The Authentication Token from '" . $authEndpoint . "' can't be sent in a header (it must be printable ASCII text with no spaces)\n";
                     }
@@ -1094,7 +1094,8 @@ EOD;
             foreach ($headers as $hvalue) {
                 $headerText .= $hvalue . "\r\n";
             }
-            // (no redirects: the Authorization header would follow them to wherever they point)
+            // (no redirects: the stream wrapper would send the Authorization header on to wherever one
+            // points - curl, the usual path, follows them but never sends it to another host)
             $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout, 'follow_location' => 0);
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
@@ -1111,6 +1112,12 @@ EOD;
             }
             // Use file_get_contents
             $content = @file_get_contents($fullUrl, false, stream_context_create(array('http' => $http_array)));
+            // (a redirect isn't followed - see above - so it's a failure, as curl's own 404/5xx are,
+            // rather than an empty answer)
+            if ($content !== false && FhirRequestPolicy::isRedirectResponse($http_response_header ?? [])) {
+                error_log('FhirOntologyAutocompleteExternalModule: not following a redirect from ' . $this->urlForLogging($fullUrl) . ' - configure the URL it points to');
+                $content = false;
+            }
         } else {
             $content = false;
         }
@@ -1225,7 +1232,8 @@ EOD;
                 'header' => "Content-type: $contentType" . "\r\n" . $headerText . "Content-Length: " . strlen($param_string) . "\r\n",
                 'content' => $param_string,
                 'timeout' => $timeout,
-                // (no redirects: the Authorization header would follow them to wherever they point)
+                // (no redirects: the stream wrapper would send the Authorization header on to wherever one
+            // points - curl, the usual path, follows them but never sends it to another host)
                 'follow_location' => 0
             );
             // If using a proxy
@@ -1239,13 +1247,19 @@ EOD;
 
             // Use file_get_contents
             $content = @file_get_contents($fullUrl, false, stream_context_create(array('http' => $http_array)));
+            // (a redirect isn't followed - see above - so it's a failure, as curl's own 404/5xx are,
+            // rather than an empty answer)
+            if ($content !== false && FhirRequestPolicy::isRedirectResponse($http_response_header ?? [])) {
+                error_log('FhirOntologyAutocompleteExternalModule: not following a redirect from ' . $this->urlForLogging($fullUrl) . ' - configure the URL it points to');
+                $content = false;
+            }
 
             // Return the content
             if ($content !== false) {
                 return $content;
             } // If no content, check the headers to see if it's hiding there (why? not sure, but it happens)
             else {
-                $content = implode("", $http_response_header);
+                $content = implode("", $http_response_header ?? []);
                 //  If header is a true header, then return false, else return the content found in the header
                 return (substr($content, 0, 5) == 'HTTP/') ? false : $content;
             }
@@ -1351,11 +1365,13 @@ EOD;
         if (array_key_exists('FHIR_ONTOLOGY_TOKEN_EXPIRES', $_SESSION) &&
             array_key_exists('FHIR_ONTOLOGY_TOKEN', $_SESSION)) {
             $expire = $_SESSION['FHIR_ONTOLOGY_TOKEN_EXPIRES'];
-            $cached = FhirRequestPolicy::bearerToken($_SESSION['FHIR_ONTOLOGY_TOKEN']);
-            if ($now < $expire && $cached !== null) {
-                // not expired (and still a token that can go in a header: one cached before that
+            if ($now < $expire) {
+                // not expired - and still a token that can go in a header (one cached before that
                 // check came in is fetched again)
-                return $cached;
+                $cached = FhirRequestPolicy::bearerToken($_SESSION['FHIR_ONTOLOGY_TOKEN']);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
 
@@ -1373,12 +1389,12 @@ EOD;
             // is a fatal TypeError on PHP 8
             $responseJson = is_string($response) ? json_decode($response, true) : null;
             if (!is_array($responseJson)) {
-                error_log("Failed to negotiate auth token : no parseable response from " . $tokenEndpoint);
+                error_log("Failed to negotiate auth token : no parseable response from " . $this->urlForLogging($tokenEndpoint));
             } elseif (array_key_exists('access_token', $responseJson)) {
                 // (it goes into an Authorization header: never one that could inject headers)
                 $token = FhirRequestPolicy::bearerToken($responseJson['access_token']);
                 if ($token === null) {
-                    error_log("Failed to negotiate auth token : the access_token from " . $tokenEndpoint . " can't be sent in a header");
+                    error_log("Failed to negotiate auth token : the access_token from " . $this->urlForLogging($tokenEndpoint) . " can't be sent in a header");
                 } else {
                     $clear = false;
                     $_SESSION['FHIR_ONTOLOGY_TOKEN'] = $token;
