@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/aehrc/redcap_fhir_ontology_provider/compare/v1.0.1...v1.0.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* refuse an access token that could inject a header; adopt Psalm 7 ([#40](https://github.com/aehrc/redcap_fhir_ontology_provider/issues/40)) ([1e5b410](https://github.com/aehrc/redcap_fhir_ontology_provider/commit/1e5b4104f9c2764dc22ef0fc4a1c8f80a406b999))
+
 ## [1.0.1](https://github.com/aehrc/redcap_fhir_ontology_provider/compare/v1.0.0...v1.0.1) (2026-10-26)
 
 
